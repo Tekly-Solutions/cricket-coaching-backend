@@ -1,6 +1,9 @@
 import User from "../models/User.js";
 import admin from "../config/firebase.js";
 import { signJwt } from "../utils/jwt.js";
+import CoachProfile from "../models/CoachProfile.js";
+import PlayerProfile from "../models/PlayerProfile.js";
+import GuardianProfile from "../models/GuardianProfile.js";
 
 export const signup = async (req, res) => {
   const session = await User.startSession();
@@ -35,6 +38,34 @@ export const signup = async (req, res) => {
       ],
       { session }
     );
+
+    // AUTO CREATE ROLE PROFILE
+    if (role === "coach") {
+    await CoachProfile.create(
+        [
+        {
+            userId: user[0]._id,
+            plan: "free",
+            isVerified: false,
+        },
+        ],
+        { session }
+    );
+    }
+
+    if (role === "player") {
+    await PlayerProfile.create(
+        [{ userId: user[0]._id }],
+        { session }
+    );
+    }
+
+    if (role === "guardian") {
+    await GuardianProfile.create(
+        [{ userId: user[0]._id }],
+        { session }
+    );
+    }
 
     await session.commitTransaction();
     session.endSession();
@@ -113,7 +144,7 @@ export const continueWithProvider = async (req, res) => {
 
     const isNewUser = !user;
 
-    // 🔹 NEW USER (FIRST TIME)
+    // NEW USER (FIRST TIME)
     if (isNewUser) {
       // Use Firebase displayName if fullName not provided in body
       const fullName = req.body.fullName || name || "Unnamed User";
@@ -132,6 +163,23 @@ export const continueWithProvider = async (req, res) => {
         role,
         signInProviders: [provider],
       });
+
+      // AUTO CREATE ROLE PROFILE
+        if (role === "coach") {
+            await CoachProfile.create({
+            userId: user._id,
+            plan: "free",
+            });
+        }
+
+        if (role === "player") {
+            await PlayerProfile.create({ userId: user._id });
+        }
+
+        if (role === "guardian") {
+            await GuardianProfile.create({ userId: user._id });
+        }
+
     } 
     // 🔹 EXISTING USER
     else {

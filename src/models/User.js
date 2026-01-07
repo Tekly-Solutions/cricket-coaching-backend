@@ -15,10 +15,6 @@ const userSchema = new mongoose.Schema(
     enum: ["password", "google.com", "apple.com"],
     default: [],
     },
-    plan: {
-      type: String,
-      default: "free",
-    },
   },
   { timestamps: true }
 );
