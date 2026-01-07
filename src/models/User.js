@@ -10,6 +10,11 @@ const userSchema = new mongoose.Schema(
       enum: ["guardian", "player", "coach"],
       required: true,
     },
+    signInProviders: {
+    type: [String],
+    enum: ["password", "google.com", "apple.com"],
+    default: [],
+    },
     plan: {
       type: String,
       default: "free",

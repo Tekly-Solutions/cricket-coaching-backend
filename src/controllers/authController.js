@@ -30,6 +30,7 @@ export const signup = async (req, res) => {
           fullName,
           email,
           role,
+          signInProviders: ["password"],
         },
       ],
       { session }
@@ -73,6 +74,13 @@ export const login = async (req, res) => {
         message: "User not found. Please sign up first.",
       });
     }
+    // Add sign in provider
+    const provider = req.firebaseUser?.sign_in_provider || "password";
+
+    if (provider && !user.signInProviders.includes(provider)) {
+    user.signInProviders.push(provider);
+    await user.save();
+    }
 
     // Generate JWT
     const token = signJwt({
@@ -94,4 +102,63 @@ export const login = async (req, res) => {
     });
   }
 };
+
+/* continue with google */
+export const continueWithProvider = async (req, res) => {
+  try {
+    const { uid, email, name, firebase } = req.firebaseUser;
+    const provider = firebase?.sign_in_provider;
+
+    let user = await User.findOne({ firebaseUid: uid });
+
+    const isNewUser = !user;
+
+    // 🔹 NEW USER (FIRST TIME)
+    if (isNewUser) {
+      // Use Firebase displayName if fullName not provided in body
+      const fullName = req.body.fullName || name || "Unnamed User";
+      const role = req.body.role; // still required from frontend
+
+      if (!role) {
+        return res.status(400).json({
+          message: "Missing role",
+        });
+      }
+
+      user = await User.create({
+        firebaseUid: uid,
+        email,
+        fullName,
+        role,
+        signInProviders: [provider],
+      });
+    } 
+    // 🔹 EXISTING USER
+    else {
+      if (!user.signInProviders.includes(provider)) {
+        user.signInProviders.push(provider);
+        await user.save();
+      }
+    }
+
+    // ISSUE BACKEND JWT
+    const token = signJwt({
+      userId: user._id,
+      role: user.role,
+    });
+
+    return res.status(200).json({
+      success: true,
+      token,
+      user,
+      isNewUser,
+    });
+  } catch (error) {
+    console.error("Continue auth error:", error);
+    return res.status(500).json({
+      message: "Internal server error",
+    });
+  }
+};
+
 
