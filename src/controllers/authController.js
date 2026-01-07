@@ -1,5 +1,6 @@
 import User from "../models/User.js";
 import admin from "../config/firebase.js";
+import { signJwt } from "../utils/jwt.js";
 
 export const signup = async (req, res) => {
   const session = await User.startSession();
@@ -58,3 +59,39 @@ export const signup = async (req, res) => {
     });
   }
 };
+
+/* login */
+export const login = async (req, res) => {
+  try {
+    const { uid, email } = req.firebaseUser;
+
+    const user = await User.findOne({ firebaseUid: uid });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found. Please sign up first.",
+      });
+    }
+
+    // Generate JWT
+    const token = signJwt({
+      userId: user._id,
+      role: user.role,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Login successful",
+      token, // BACKEND JWT
+      user,
+    });
+  } catch (error) {
+    console.error("Login error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+};
+
