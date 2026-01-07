@@ -1,0 +1,24 @@
+import express from 'express';
+import cors from 'cors';
+import authRoutes from "./routes/authRoutes.js";
+
+const app = express();
+
+const FRONTEND_URLS = process.env.FRONTEND_URL.split(',');
+
+const PORT = process.env.PORT || 4000;
+
+app.use(cors({
+    origin: FRONTEND_URLS,
+    credentials: true, // Allow cookies to be sent with requests
+}));
+
+app.use(express.json());
+
+app.get('/', (req, res) => {
+    res.send(`Server is running on http://localhost:${PORT}`);
+})
+
+app.use("/api/auth", authRoutes);
+
+export default app;
