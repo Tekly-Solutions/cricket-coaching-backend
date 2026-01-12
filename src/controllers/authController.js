@@ -1,6 +1,6 @@
 import User from "../models/User.js";
 import admin from "../config/firebase.js";
-import { signJwt } from "../utils/jwt.js";
+import { signAccessToken, signRefreshToken, verifyRefreshToken } from "../utils/jwt.js";
 import CoachProfile from "../models/CoachProfile.js";
 import PlayerProfile from "../models/PlayerProfile.js";
 import GuardianProfile from "../models/GuardianProfile.js";
@@ -113,16 +113,26 @@ export const login = async (req, res) => {
     await user.save();
     }
 
-    // Generate JWT
-    const token = signJwt({
+    // access token
+    const accessToken = signAccessToken({
       userId: user._id,
       role: user.role,
     });
 
+    // refresh token
+    const refreshToken = signRefreshToken({
+      userId: user._id,
+    });
+
+    // Save refresh token
+    user.refreshToken = refreshToken;
+    await user.save();
+
     return res.status(200).json({
       success: true,
       message: "Login successful",
-      token, // BACKEND JWT
+      accessToken,
+      refreshToken,
       user,
     });
   } catch (error) {
@@ -189,15 +199,24 @@ export const continueWithProvider = async (req, res) => {
       }
     }
 
-    // ISSUE BACKEND JWT
-    const token = signJwt({
+    // Generate tokens
+    const accessToken = signAccessToken({
       userId: user._id,
       role: user.role,
     });
 
+    const refreshToken = signRefreshToken({
+      userId: user._id,
+    });
+
+    // save refresh token in db
+    user.refreshToken = refreshToken;
+    await user.save();
+
     return res.status(200).json({
       success: true,
-      token,
+      accessToken,
+      refreshToken,
       user,
       isNewUser,
     });
@@ -208,5 +227,64 @@ export const continueWithProvider = async (req, res) => {
     });
   }
 };
+
+export const refreshToken = async (req, res) => {
+  try {
+    const { refreshToken } = req.body;
+
+    if (!refreshToken) {
+      return res.status(401).json({
+        message: "Refresh token missing",
+      });
+    }
+
+    // 1️⃣ Verify refresh token signature & expiry
+    const payload = verifyRefreshToken(refreshToken);
+
+    // 2️⃣ Find user
+    const user = await User.findById(payload.userId);
+    if (!user) {
+      return res.status(401).json({
+        message: "User not found",
+      });
+    }
+
+    // 3️⃣ Match refresh token with DB
+    if (user.refreshToken !== refreshToken) {
+      return res.status(403).json({
+        message: "Invalid refresh token",
+      });
+    }
+
+    // 4️⃣ Issue NEW access token
+    const newAccessToken = signAccessToken({
+      userId: user._id,
+      role: user.role,
+    });
+
+    // 5️⃣ Rotate refresh token (IMPORTANT)
+    const newRefreshToken = signRefreshToken({
+      userId: user._id,
+    });
+
+    // 6️⃣ Save new refresh token
+    user.refreshToken = newRefreshToken;
+    await user.save();
+
+    return res.status(200).json({
+      success: true,
+      accessToken: newAccessToken,
+      refreshToken: newRefreshToken,
+    });
+
+  } catch (error) {
+    console.error("Refresh token error:", error);
+
+    return res.status(403).json({
+      message: "Invalid or expired refresh token",
+    });
+  }
+};
+
 
 

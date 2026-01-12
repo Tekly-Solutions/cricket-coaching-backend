@@ -15,6 +15,11 @@ const userSchema = new mongoose.Schema(
     enum: ["password", "google.com", "apple.com"],
     default: [],
     },
+    // refresh token store in db for more security
+    refreshToken: {
+      type: String,
+      default: null,
+    },
   },
   { timestamps: true }
 );
