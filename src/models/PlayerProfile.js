@@ -31,7 +31,7 @@ const playerProfileSchema = new mongoose.Schema(
     // "Right-hand bat", "Left-hand bat", ...
     battingStyle: {
       type: String,
-      required: true,
+      // required: true,
     },
 
     // "Right-arm fast", "Left-arm orthodox", "" (empty if not applicable)

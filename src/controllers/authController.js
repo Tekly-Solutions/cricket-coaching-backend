@@ -183,7 +183,10 @@ export const continueWithProvider = async (req, res) => {
         }
 
         if (role === "player") {
-            await PlayerProfile.create({ userId: user._id });
+            await PlayerProfile.create({ 
+              userId: user._id,
+              role: "player",
+            });
         }
 
         if (role === "guardian") {
