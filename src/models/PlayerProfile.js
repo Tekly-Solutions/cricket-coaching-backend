@@ -45,7 +45,7 @@ const playerProfileSchema = new mongoose.Schema(
     age: {
       type: String,
       trim: true,
-      required: true,
+      // required: true,
     },
 
     // Optional – can be calculated or set manually
