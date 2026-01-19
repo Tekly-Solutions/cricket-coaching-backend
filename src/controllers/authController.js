@@ -55,7 +55,11 @@ export const signup = async (req, res) => {
 
     if (role === "player") {
     await PlayerProfile.create(
-        [{ userId: user[0]._id }],
+        [{ 
+          userId: user[0]._id,
+          role: 'player',
+          isSelfManaged: true
+        }],
         { session }
     );
     }
@@ -183,7 +187,11 @@ export const continueWithProvider = async (req, res) => {
         }
 
         if (role === "player") {
-            await PlayerProfile.create({ userId: user._id });
+            await PlayerProfile.create({ 
+              userId: user._id,
+              role: "player",
+              isSelfManaged: true,
+            });
         }
 
         if (role === "guardian") {

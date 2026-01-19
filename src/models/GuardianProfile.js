@@ -9,8 +9,27 @@ const guardianProfileSchema = new mongoose.Schema(
       unique: true,
     },
 
-    phoneNumber: String,
-    address: String,
+    phoneNumber: {
+      type: String,
+      trim: true,
+    },
+
+    address: {
+      type: String,
+      trim: true,
+    },
+
+    // NEW: array of PlayerProfile IDs (not User IDs)
+    players: [{
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "PlayerProfile",
+    }],
+
+    // Optional: if you want to track when guardian was linked
+    createdAt: {
+      type: Date,
+      default: Date.now,
+    },
   },
   { timestamps: true }
 );

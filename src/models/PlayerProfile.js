@@ -5,15 +5,30 @@ const playerProfileSchema = new mongoose.Schema(
     userId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-      required: true,
+      required: false,          // ← optional for minors
       unique: true,
+      sparse: true,
+    },
+
+    // For minors (no User yet) → store name here
+    // For self-managed → will be null or auto-filled from User
+    fullName: {
+      type: String,
+      trim: true,
+      required: function () {
+        // Required only if no userId (i.e. minor without account)
+        return !this.userId;
+      },
     },
 
     // For players under 16 → guardian is required (enforced in business logic)
     guardianId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-      // not required in schema → we enforce it via validation / pre-save hook
+      required: function () {
+        // Required for minors (when no userId)
+        return !this.userId;
+      },
     },
 
     // Avatar shown in home screen, coach view, etc.
@@ -31,7 +46,7 @@ const playerProfileSchema = new mongoose.Schema(
     // "Right-hand bat", "Left-hand bat", ...
     battingStyle: {
       type: String,
-      required: true,
+      // required: true,
     },
 
     // "Right-arm fast", "Left-arm orthodox", "" (empty if not applicable)
@@ -57,5 +72,17 @@ const playerProfileSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+// Virtual: always return the correct fullName
+playerProfileSchema.virtual('displayName').get(function () {
+  if (this.userId && this.populate('userId')) {
+    return this.userId.fullName; // from User if exists
+  }
+  return this.fullName; // from profile if minor
+});
+
+// Ensure virtuals are included when converting to JSON
+playerProfileSchema.set('toJSON', { virtuals: true });
+playerProfileSchema.set('toObject', { virtuals: true });
 
 export default mongoose.model("PlayerProfile", playerProfileSchema);
