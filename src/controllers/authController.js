@@ -1,6 +1,8 @@
 import User from "../models/User.js";
 import admin from "../config/firebase.js";
 import { signAccessToken, signRefreshToken, verifyRefreshToken } from "../utils/jwt.js";
+import { v4 as uuidv4 } from 'uuid';
+import bcrypt from 'bcryptjs';
 import CoachProfile from "../models/CoachProfile.js";
 import PlayerProfile from "../models/PlayerProfile.js";
 import GuardianProfile from "../models/GuardianProfile.js";
@@ -14,16 +16,16 @@ export const signup = async (req, res) => {
     const { uid, email } = req.firebaseUser;
 
     if (!fullName || !role) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         message: "Missing fields"
-    });
+      });
     }
 
     const existingUser = await User.findOne({ firebaseUid: uid });
     if (existingUser) {
-      return res.status(409).json({ 
-        message: "User already exists" 
-    });
+      return res.status(409).json({
+        message: "User already exists"
+      });
     }
 
     const user = await User.create(
@@ -41,34 +43,34 @@ export const signup = async (req, res) => {
 
     // AUTO CREATE ROLE PROFILE
     if (role === "coach") {
-    await CoachProfile.create(
+      await CoachProfile.create(
         [
-        {
+          {
             userId: user[0]._id,
             plan: "free",
             isVerified: false,
-        },
+          },
         ],
         { session }
-    );
+      );
     }
 
     if (role === "player") {
-    await PlayerProfile.create(
-        [{ 
+      await PlayerProfile.create(
+        [{
           userId: user[0]._id,
           role: 'player',
           isSelfManaged: true
         }],
         { session }
-    );
+      );
     }
 
     if (role === "guardian") {
-    await GuardianProfile.create(
+      await GuardianProfile.create(
         [{ userId: user[0]._id }],
         { session }
-    );
+      );
     }
 
     await session.commitTransaction();
@@ -90,8 +92,8 @@ export const signup = async (req, res) => {
 
     console.error("Signup error:", error);
     return res.status(500).json({
-        success: false,
-        message: "Internal server error" 
+      success: false,
+      message: "Internal server error"
     });
   }
 };
@@ -113,8 +115,8 @@ export const login = async (req, res) => {
     const provider = req.firebaseUser?.sign_in_provider || "password";
 
     if (provider && !user.signInProviders.includes(provider)) {
-    user.signInProviders.push(provider);
-    await user.save();
+      user.signInProviders.push(provider);
+      await user.save();
     }
 
     // access token
@@ -179,26 +181,26 @@ export const continueWithProvider = async (req, res) => {
       });
 
       // AUTO CREATE ROLE PROFILE
-        if (role === "coach") {
-            await CoachProfile.create({
-            userId: user._id,
-            plan: "free",
-            });
-        }
+      if (role === "coach") {
+        await CoachProfile.create({
+          userId: user._id,
+          plan: "free",
+        });
+      }
 
-        if (role === "player") {
-            await PlayerProfile.create({ 
-              userId: user._id,
-              role: "player",
-              isSelfManaged: true,
-            });
-        }
+      if (role === "player") {
+        await PlayerProfile.create({
+          userId: user._id,
+          role: "player",
+          isSelfManaged: true,
+        });
+      }
 
-        if (role === "guardian") {
-            await GuardianProfile.create({ userId: user._id });
-        }
+      if (role === "guardian") {
+        await GuardianProfile.create({ userId: user._id });
+      }
 
-    } 
+    }
     // 🔹 EXISTING USER
     else {
       if (!user.signInProviders.includes(provider)) {
@@ -233,6 +235,131 @@ export const continueWithProvider = async (req, res) => {
     return res.status(500).json({
       message: "Internal server error",
     });
+  }
+};
+
+/* LOCAL AUTH METHODS */
+export const signupLocal = async (req, res) => {
+  const session = await User.startSession();
+  session.startTransaction();
+
+  try {
+    const { name, email, password, role } = req.body; // Using 'name' to match frontend
+
+    if (!name || !email || !password || !role) {
+      return res.status(400).json({ message: "Missing fields" });
+    }
+
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      return res.status(409).json({ message: "User already exists" });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const firebaseUid = `local_${uuidv4()}`; // Generate a fake firebase UID
+
+    const user = await User.create(
+      [
+        {
+          firebaseUid,
+          fullName: name,
+          email,
+          role,
+          password: hashedPassword,
+          signInProviders: ["password"],
+        },
+      ],
+      { session }
+    );
+
+    // AUTO CREATE ROLE PROFILE
+    if (role === "coach") {
+      await CoachProfile.create(
+        [{ userId: user[0]._id, plan: "free", isVerified: false }],
+        { session }
+      );
+    } else if (role === "player") {
+      await PlayerProfile.create(
+        [{ userId: user[0]._id, role: 'player', isSelfManaged: true }],
+        { session }
+      );
+    } else if (role === "guardian") {
+      await GuardianProfile.create(
+        [{ userId: user[0]._id }],
+        { session }
+      );
+    }
+
+    await session.commitTransaction();
+    session.endSession();
+
+    // Generate tokens
+    const accessToken = signAccessToken({
+      userId: user[0]._id,
+      role: user[0].role,
+    });
+    const refreshToken = signRefreshToken({ userId: user[0]._id });
+
+    // Save refresh token
+    user[0].refreshToken = refreshToken;
+    await user[0].save();
+
+    return res.status(201).json({
+      success: true,
+      message: "User created successfully",
+      token: accessToken, // Frontend expects 'token'
+      user: user[0],
+    });
+  } catch (error) {
+    await session.abortTransaction();
+    session.endSession();
+    console.error("Signup Local error:", error);
+    return res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
+
+export const loginLocal = async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({ message: "Missing credentials" });
+    }
+
+    const user = await User.findOne({ email }).select('+password');
+
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found." });
+    }
+
+    const isMatch = await bcrypt.compare(password, user.password || '');
+    if (!isMatch) {
+      return res.status(400).json({ success: false, message: "Invalid credentials." });
+    }
+
+    // Generate tokens
+    const accessToken = signAccessToken({
+      userId: user._id,
+      role: user.role,
+    });
+
+    const refreshToken = signRefreshToken({
+      userId: user._id,
+    });
+
+    user.refreshToken = refreshToken;
+    await user.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Login successful",
+      token: accessToken, // Frontend expects 'token'
+      refreshToken,
+      user,
+    });
+  } catch (error) {
+    console.error("Login Local error:", error);
+    return res.status(500).json({ success: false, message: "Internal server error" });
   }
 };
 

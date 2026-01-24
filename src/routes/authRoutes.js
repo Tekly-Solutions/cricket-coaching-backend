@@ -1,11 +1,12 @@
 import express from "express";
-import { continueWithProvider, login, refreshToken, signup } from "../controllers/authController.js";
+import { continueWithProvider, login, refreshToken, signup, signupLocal, loginLocal } from "../controllers/authController.js";
 import { verifyFirebaseToken } from "../middlewares/firebaseAuth.js";
 
 const router = express.Router();
 
 router.post("/signup", verifyFirebaseToken, signup);
-router.post("/login", verifyFirebaseToken, login);
+router.post("/register", signupLocal); // Local auth registration
+router.post("/login", loginLocal); // Local auth login (Replaces Firebase login for now)
 router.post("/continue-oauth", verifyFirebaseToken, continueWithProvider);
 
 // Refresh token

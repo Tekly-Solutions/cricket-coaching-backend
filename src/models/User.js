@@ -15,15 +15,20 @@ const userSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
+    password: {
+      type: String,
+      required: false, // Optional because Firebase users won't have it
+      select: false,   // Don't return by default
+    },
     role: {
       type: String,
       enum: ["guardian", "player", "coach"],
       required: true,
     },
     signInProviders: {
-    type: [String],
-    enum: ["password", "google.com", "apple.com"],
-    default: [],
+      type: [String],
+      enum: ["password", "google.com", "apple.com"],
+      default: [],
     },
     // refresh token store in db for more security
     refreshToken: {
