@@ -1,0 +1,18 @@
+# Render.yaml (Optional Configuration)
+# This file helps Render.com auto-configure your service
+
+services:
+  - type: web
+    name: cricket-coaching-backend
+    env: node
+    region: singapore  # Choose region closest to your users
+    plan: free  # Free tier
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /
+    envVars:
+      - key: PORT
+        value: 4000
+      - key: NODE_ENV
+        value: production
+      # Other environment variables will be added via Render dashboard
