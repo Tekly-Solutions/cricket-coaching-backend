@@ -3,6 +3,7 @@ dotenv.config();
 
 import express from "express";
 import cors from "cors";
+import morgan from "morgan";
 import authRoutes from "./routes/authRoutes.js";
 import userRoutes from "./routes/userRoutes.js";
 import coachRoutes from "./routes/coachRoutes.js";
@@ -12,18 +13,16 @@ import sessionRoutes from "./routes/sessionRoutes.js";
 
 const app = express();
 
-const FRONTEND_URLS = process.env.FRONTEND_URL
-  ? process.env.FRONTEND_URL.split(",")
-  : [];
-
-const PORT = process.env.PORT || 4000;
-
+// CORS configuration for mobile apps
+// Mobile apps don't have a specific origin, so we need to allow all
 app.use(
   cors({
-    origin: FRONTEND_URLS,
-    credentials: true,
+    origin: '*', // Allow all origins for mobile apps
+    credentials: false, // Set to false when using origin: '*'
   })
 );
+
+app.use(morgan("dev"));
 
 app.use(express.json());
 
