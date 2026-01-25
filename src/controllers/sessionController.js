@@ -207,6 +207,7 @@ export const getSessionById = async (req, res) => {
     const session = await Session.findById(req.params.id)
       .populate('assignedPlayers.player', 'fullName profilePhoto email')
       .populate('coach', 'fullName profilePhoto')
+      .populate('createdBy', 'fullName profilePhoto email')
       .lean();
 
     if (!session) {

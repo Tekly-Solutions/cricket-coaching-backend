@@ -10,6 +10,8 @@ import coachRoutes from "./routes/coachRoutes.js";
 import playerRouter from "./routes/playerRoutes.js";
 import guardianRouter from "./routes/guardianRoutes.js";
 import sessionRoutes from "./routes/sessionRoutes.js";
+import dashboardRoutes from "./routes/dashboardRoutes.js";
+import bookingRoutes from "./routes/bookingRoutes.js";
 
 const app = express();
 
@@ -38,5 +40,7 @@ app.use("/api/coach", coachRoutes);
 app.use("/api/player", playerRouter);
 app.use("/api/guardian", guardianRouter);
 app.use("/api/sessions", sessionRoutes);
+app.use("/api/dashboard", dashboardRoutes);
+app.use("/api/bookings", bookingRoutes);
 
 export default app;
