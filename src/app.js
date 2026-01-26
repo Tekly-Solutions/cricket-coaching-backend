@@ -13,15 +13,19 @@ import sessionRoutes from "./routes/sessionRoutes.js";
 import dashboardRoutes from "./routes/dashboardRoutes.js";
 import bookingRoutes from "./routes/bookingRoutes.js";
 import adminRouter from "./routes/adminRoutes.js";
+import cookieParser from "cookie-parser";
 
 const app = express();
+
+// Enable cookie parsing (must come before routes)
+app.use(cookieParser()); // IMPORTANT for req.cookies
 
 // CORS configuration for mobile apps
 // Mobile apps don't have a specific origin, so we need to allow all
 app.use(
   cors({
     origin: '*', // Allow all origins for mobile apps
-    credentials: false, // Set to false when using origin: '*'
+    credentials: true, // needed for cookies
   })
 );
 

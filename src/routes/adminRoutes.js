@@ -4,6 +4,7 @@ import {
   adminLogout,
 } from "../controllers/admin/authController.js";
 import { adminAuth } from "../middlewares/adminAuth.js";
+import { getAllCoaches } from "../controllers/admin/coachController.js";
 
 // Example protected route (add more later: users, sessions, reports, etc.)
 // import { getAdminDashboard } from "../controllers/admin/dashboardController.js"; // create later
@@ -15,8 +16,11 @@ router.post("/login", adminLogin);
 router.post("/logout", adminLogout); // optional
 
 // Protected admin routes
-router.use(adminAuth);
+// router.use(adminAuth);
 
 // router.get("/dashboard", getAdminDashboard); // example
+
+/* coaches */
+router.get("/coaches", adminAuth, getAllCoaches);
 
 export default router;
