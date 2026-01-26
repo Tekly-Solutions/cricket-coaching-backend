@@ -1,6 +1,7 @@
 // controllers/admin/coachController.js
 import User from "../../models/User.js";
 import CoachProfile from "../../models/CoachProfile.js";
+import mongoose from "mongoose";
 
 /**
  * GET /api/admin/coaches
@@ -116,6 +117,79 @@ export const getAllCoaches = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Failed to fetch coaches",
+    });
+  }
+};
+
+
+/**
+ * GET /api/admin/coaches/:id
+ * Admin-only: Fetch full details of a single coach by user ID
+ */
+export const getCoachById = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Validate ID
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid coach ID format",
+      });
+    }
+
+    // Find the coach User
+    const coachUser = await User.findOne({
+      _id: id,
+      role: "coach",
+    }).lean();
+
+    if (!coachUser) {
+      return res.status(404).json({
+        success: false,
+        message: "Coach not found or not a coach account",
+      });
+    }
+
+    // Fetch CoachProfile
+    const coachProfile = await CoachProfile.findOne({ userId: id }).lean();
+
+    // Combine data
+    const coachData = {
+      id: coachUser._id,
+      fullName: coachUser.fullName,
+      email: coachUser.email,
+      phoneNumber: coachUser.phoneNumber || null,
+      role: coachUser.role,
+      createdAt: coachUser.createdAt,
+      lastProfileUpdate: coachUser.lastProfileUpdate || null,
+
+      // Coach-specific fields (from CoachProfile)
+      profilePhoto: coachProfile?.profilePhoto || null,
+      coachTitle: coachProfile?.coachTitle || null,
+      specialties: coachProfile?.specialties || [],
+      primarySpecialization: coachProfile?.primarySpecialization || null,
+      certifications: coachProfile?.certifications || [],
+      experienceYears: coachProfile?.experienceYears || 0,
+      aboutMe: coachProfile?.aboutMe || "",
+      plan: coachProfile?.plan || "free",
+      subscription: coachProfile?.subscription || { status: "inactive" },
+      rating: coachProfile?.rating || 0,
+      playersCoachedCount: coachProfile?.playersCoachedCount || 0,
+      isVerified: coachProfile?.isVerified || false,
+      profileCompletionPercentage: coachProfile?.profileCompletionPercentage || 0,
+      availability: coachProfile?.availability || [],
+    };
+
+    return res.status(200).json({
+      success: true,
+      data: coachData,
+    });
+  } catch (error) {
+    console.error("Admin get coach by ID error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch coach details",
     });
   }
 };

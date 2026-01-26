@@ -4,7 +4,7 @@ import {
   adminLogout,
 } from "../controllers/admin/authController.js";
 import { adminAuth } from "../middlewares/adminAuth.js";
-import { getAllCoaches } from "../controllers/admin/coachController.js";
+import { getAllCoaches, getCoachById } from "../controllers/admin/coachController.js";
 
 // Example protected route (add more later: users, sessions, reports, etc.)
 // import { getAdminDashboard } from "../controllers/admin/dashboardController.js"; // create later
@@ -22,5 +22,8 @@ router.post("/logout", adminLogout); // optional
 
 /* coaches */
 router.get("/coaches", adminAuth, getAllCoaches);
+
+// Get single coach by ID
+router.get("/coaches/:id", adminAuth, getCoachById);
 
 export default router;
