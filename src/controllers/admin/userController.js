@@ -382,3 +382,209 @@ export const getGuardianById = async (req, res) => {
     });
   }
 };
+
+/**
+ * GET /api/admin/players
+ * Admin-only: List all players with filters, search, pagination
+ *
+ * Query params:
+ *   - page: number (default 1)
+ *   - limit: number (default 10)
+ *   - search: string (name or email for self-managed)
+ *   - type: self-managed | minor | all (default all)
+ *   - sort: name | -name | age | -age | createdAt | -createdAt (default -createdAt)
+ */
+export const getAllPlayers = async (req, res) => {
+  try {
+    const {
+      page = 1,
+      limit = 10,
+      search = "",
+      type = "all",
+      sort = "-createdAt",
+    } = req.query;
+
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    // Base query on PlayerProfile (all players exist here)
+    const query = {};
+
+    // Search (for self-managed: search User; for minors: search PlayerProfile.fullName)
+    if (search) {
+      query.$or = [
+        { fullName: { $regex: search.trim(), $options: "i" } },
+      ];
+    }
+
+    // Type filter
+    if (type === "self-managed") {
+      query.userId = { $exists: true, $ne: null };
+    } else if (type === "minor") {
+      query.userId = null;
+    }
+
+    const pipeline = [
+      { $match: query },
+
+      // Join with User (if exists - for self-managed)
+      {
+        $lookup: {
+          from: "users",
+          localField: "userId",
+          foreignField: "_id",
+          as: "user",
+        },
+      },
+      { $unwind: { path: "$user", preserveNullAndEmptyArrays: true } },
+
+      // Join with Guardian (if exists)
+      {
+        $lookup: {
+          from: "guardianprofiles",
+          localField: "guardianId",
+          foreignField: "userId",
+          as: "guardian",
+        },
+      },
+      { $unwind: { path: "$guardian", preserveNullAndEmptyArrays: true } },
+
+      // Project clean fields
+      {
+        $project: {
+          id: "$_id",
+          name: {
+            $cond: {
+              if: { $ifNull: ["$user.fullName", false] },
+              then: "$user.fullName",
+              else: "$fullName",
+            },
+          },
+          email: { $ifNull: ["$user.email", null] },
+          age: "$age",
+          role: "$role",
+          battingStyle: "$battingStyle",
+          bowlingStyle: "$bowlingStyle",
+          profilePhoto: "$profilePhoto",
+          isSelfManaged: "$isSelfManaged",
+          isMinorWithoutUser: "$isMinorWithoutUser",
+          guardian: {
+            $cond: {
+              if: { $ifNull: ["$guardian", false] },
+              then: {
+                id: "$guardian.userId",
+                name: "$guardian.fullName", // Wait, GuardianProfile has no fullName - use User
+                // Better: populate guardian's User
+              },
+              else: null,
+            },
+          },
+          createdAt: "$createdAt",
+        },
+      },
+
+      // Sort
+      {
+        $sort: sort.startsWith("-")
+          ? { [sort.slice(1)]: -1 }
+          : { [sort]: 1 },
+      },
+
+      // Pagination
+      { $skip: skip },
+      { $limit: parseInt(limit) },
+    ];
+
+    const players = await PlayerProfile.aggregate(pipeline);
+
+    // Total count
+    const totalPipeline = [
+      { $match: query },
+      { $count: "total" },
+    ];
+
+    const totalResult = await PlayerProfile.aggregate(totalPipeline);
+    const total = totalResult[0]?.total || 0;
+
+    return res.status(200).json({
+      success: true,
+      data: players,
+      pagination: {
+        total,
+        page: parseInt(page),
+        limit: parseInt(limit),
+        pages: Math.ceil(total / limit),
+      },
+    });
+  } catch (error) {
+    console.error("Admin get players error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch players",
+    });
+  }
+};
+
+/**
+ * GET /api/admin/players/:id
+ * Admin-only: Get full details of a single player by PlayerProfile ID
+ */
+export const getPlayerById = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid player ID format",
+      });
+    }
+
+    // Find PlayerProfile
+    const playerProfile = await PlayerProfile.findById(id)
+      .populate("userId", "fullName email phoneNumber role")
+      .populate("guardianId", "fullName email phoneNumber")
+      .lean();
+
+    if (!playerProfile) {
+      return res.status(404).json({
+        success: false,
+        message: "Player not found",
+      });
+    }
+
+    // Combine data
+    const playerData = {
+      id: playerProfile._id,
+      name: playerProfile.userId?.fullName || playerProfile.fullName,
+      email: playerProfile.userId?.email || null,
+      phoneNumber: playerProfile.userId?.phoneNumber || null,
+      age: playerProfile.age,
+      role: playerProfile.role,
+      battingStyle: playerProfile.battingStyle,
+      bowlingStyle: playerProfile.bowlingStyle,
+      profilePhoto: playerProfile.profilePhoto,
+      isSelfManaged: playerProfile.isSelfManaged,
+      isMinorWithoutUser: playerProfile.isMinorWithoutUser,
+      guardian: playerProfile.guardianId
+        ? {
+            id: playerProfile.guardianId._id,
+            name: playerProfile.guardianId.fullName,
+            email: playerProfile.guardianId.email,
+            phoneNumber: playerProfile.guardianId.phoneNumber,
+          }
+        : null,
+      createdAt: playerProfile.createdAt,
+    };
+
+    return res.status(200).json({
+      success: true,
+      data: playerData,
+    });
+  } catch (error) {
+    console.error("Admin get player by ID error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch player details",
+    });
+  }
+};

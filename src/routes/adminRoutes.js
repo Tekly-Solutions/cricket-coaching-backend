@@ -4,7 +4,7 @@ import {
   adminLogout,
 } from "../controllers/admin/authController.js";
 import { adminAuth } from "../middlewares/adminAuth.js";
-import { getAllCoaches, getAllGuardians, getCoachById, getGuardianById } from "../controllers/admin/userController.js";
+import { getAllCoaches, getAllGuardians, getAllPlayers, getCoachById, getGuardianById, getPlayerById } from "../controllers/admin/userController.js";
 
 // Example protected route (add more later: users, sessions, reports, etc.)
 // import { getAdminDashboard } from "../controllers/admin/dashboardController.js"; // create later
@@ -27,5 +27,10 @@ router.get("/coaches/:id", adminAuth, getCoachById); // Get single coach by ID
 // Guardians
 router.get("/guardians", adminAuth, getAllGuardians); // get all guardians with filters
 router.get("/guardians/:id", adminAuth, getGuardianById); // Get single guardian by ID
+
+
+// Players
+router.get("/players", adminAuth, getAllPlayers);
+router.get("/players/:id", adminAuth, getPlayerById);
 
 export default router;
