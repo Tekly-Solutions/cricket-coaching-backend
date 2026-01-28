@@ -106,10 +106,35 @@ const coachProfileSchema = new mongoose.Schema(
       max: 100,
     },
 
-    // Optional — if coaches set availability (future feature)
+    // Availability Management
     availability: {
-      type: [String],
-      default: [], // e.g. ["Mon-Fri 16:00-20:00", "Sat 09:00-13:00"]
+      // Recurring weekly schedule
+      recurringSchedule: {
+        activeDays: {
+          type: [Number], // 0=Sunday, 1=Monday, ..., 6=Saturday
+          default: [1, 2, 3, 4, 5], // Monday-Friday by default
+        },
+        timeIntervals: {
+          type: [{
+            start: { type: String, required: true }, // "09:00 AM"
+            end: { type: String, required: true },   // "05:00 PM"
+          }],
+          default: [{ start: "09:00 AM", end: "05:00 PM" }],
+        },
+      },
+      
+      // Blocked dates (vacations, holidays)
+      blockedDates: {
+        type: [{
+          title: { type: String, required: true },
+          startDate: { type: Date, required: true },
+          endDate: { type: Date, required: true },
+          icon: { type: String, default: 'block' },
+          color: { type: String, default: 'red' },
+          createdAt: { type: Date, default: Date.now },
+        }],
+        default: [],
+      },
     },
   },
   { timestamps: true }
