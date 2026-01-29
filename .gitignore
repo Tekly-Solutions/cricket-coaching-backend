@@ -4,6 +4,8 @@ node_modules/
 # Environment variable files
 .env
 serviceAccountKey.json
+google-services.json
+
 # Logs
 *.log
 npm-debug.log*
