@@ -1,30 +1,33 @@
-import { onRequest } from "firebase-functions/v1/https"; // v1 HTTP function
-import { setGlobalOptions } from "firebase-functions";
+import { onRequest } from "firebase-functions/v2/https";
+import { defineSecret } from "firebase-functions/params";
+import { setGlobalOptions } from "firebase-functions/v2";
 import app from "./src/app.js";
 import { connectDB } from "./src/config/db.js";
 
-// Optional: limit max instances to control cost
+// limit instances (cost control)
 setGlobalOptions({ maxInstances: 10 });
 
+// define secret
 const MONGO_URI = defineSecret("MONGO_URI");
 
-// Connect to MongoDB once at cold start
-const startServer = async () => {
-  try {
-    await connectDB(
-      process.env.MONGO_URI || process.env.MONGO_URI_FIREBASE // Firebase config will override this
-    );
-    console.log("Database connected!");
-  } catch (error) {
-    console.error("DB connection failed:", error);
-  }
-};
-startServer();
+// connect DB once on cold start
+let isConnected = false;
 
-// Export Express app as HTTPS Firebase function
+async function initDB() {
+  if (isConnected) return;
+
+  await connectDB(process.env.MONGO_URI);
+  isConnected = true;
+  console.log("MongoDB connected");
+}
+
+// export API
 export const api = onRequest(
-    {
-        secrets: [MONGO_URI],
-    },
-    app
+  {
+    secrets: [MONGO_URI],
+  },
+  async (req, res) => {
+    await initDB();
+    return app(req, res);
+  }
 );
