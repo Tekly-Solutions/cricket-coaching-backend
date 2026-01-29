@@ -7,7 +7,7 @@ import {
     cancelBooking,
     validatePromoCode,
 } from '../controllers/bookingController.js';
-import { jwtAuth } from '../middlewares/jwtAuthMiddleware.js';
+import { hybridAuth } from '../middlewares/hybridAuth.js';
 
 // Middleware to verify player or guardian role
 const playerOrGuardianOnly = (req, res, next) => {
@@ -18,15 +18,15 @@ const playerOrGuardianOnly = (req, res, next) => {
 };
 
 // Routes
-router.post('/validate-promo', jwtAuth, validatePromoCode);
+router.post('/validate-promo', hybridAuth, validatePromoCode);
 
 router
     .route('/')
-    .post(jwtAuth, playerOrGuardianOnly, createBooking)
-    .get(jwtAuth, playerOrGuardianOnly, getPlayerBookings);
+    .post(hybridAuth, playerOrGuardianOnly, createBooking)
+    .get(hybridAuth, playerOrGuardianOnly, getPlayerBookings);
 
-router.route('/:id').get(jwtAuth, getBookingById);
+router.route('/:id').get(hybridAuth, getBookingById);
 
-router.route('/:id/cancel').put(jwtAuth, playerOrGuardianOnly, cancelBooking);
+router.route('/:id/cancel').put(hybridAuth, playerOrGuardianOnly, cancelBooking);
 
 export default router;

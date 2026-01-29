@@ -1,5 +1,5 @@
 import express from "express";
-import { jwtAuth } from "../middlewares/jwtAuthMiddleware.js";
+import { hybridAuth } from '../middlewares/hybridAuth.js';
 import { roleAuth } from "../middlewares/roleAuth.js";
 import {
   getPlayerProfile,
@@ -9,7 +9,7 @@ import {
 const router = express.Router();
 
 // All player routes require authentication
-router.use(jwtAuth);
+router.use(hybridAuth);
 
 // Only players can access their own profile
 router.get(

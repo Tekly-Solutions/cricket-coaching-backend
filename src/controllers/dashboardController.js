@@ -174,11 +174,34 @@ export const getGuardianDashboard = async (req, res) => {
 
         // Get guardian profile with managed players
         const guardianProfile = await GuardianProfile.findOne({ userId })
-            .populate('managedPlayers.player', 'fullName email')
+            .populate({
+                path: 'players',
+                populate: {
+                    path: 'userId',
+                    select: 'fullName email'
+                }
+            })
             .lean();
 
-        const managedPlayerIds = guardianProfile?.managedPlayers?.map(
-            mp => mp.player._id
+        if (!guardianProfile) {
+            console.log('⚠️ Guardian profile not found for userId:', userId);
+            return res.json({
+                success: true,
+                data: {
+                    managedPlayers: [],
+                    upcomingSessions: [],
+                    recentActivity: [],
+                    stats: {
+                        totalPlayers: 0,
+                        activeSessions: 0,
+                        completedSessions: 0,
+                    }
+                }
+            });
+        }
+
+        const managedPlayerIds = guardianProfile?.players?.map(
+            player => player._id
         ) || [];
 
         // Get sessions for all managed players

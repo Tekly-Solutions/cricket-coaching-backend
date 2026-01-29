@@ -120,23 +120,63 @@ export const getCoachAvailability = async (req, res) => {
       });
     }
 
-    // Ensure availability has proper structure
-    let availability = profile.availability;
-    
-    // If availability is not properly structured, initialize it
-    if (!availability || !availability.recurringSchedule || !availability.blockedDates) {
-      availability = {
+    // Initialize availability if it doesn't exist
+    if (!profile.availability) {
+      profile.availability = {
         recurringSchedule: {
-          activeDays: availability?.recurringSchedule?.activeDays || [1, 2, 3, 4, 5],
-          timeIntervals: availability?.recurringSchedule?.timeIntervals || [{ start: "09:00 AM", end: "05:00 PM" }],
+          daySchedules: {
+            '0': [{ start: "09:00 AM", end: "05:00 PM" }],
+            '1': [{ start: "09:00 AM", end: "05:00 PM" }],
+            '2': [{ start: "09:00 AM", end: "05:00 PM" }],
+            '3': [{ start: "09:00 AM", end: "05:00 PM" }],
+            '4': [{ start: "09:00 AM", end: "05:00 PM" }],
+            '5': [],
+            '6': [],
+          },
         },
-        blockedDates: availability?.blockedDates || [],
+        blockedDates: [],
       };
+      await profile.save();
+    }
+
+    // Ensure nested structures exist
+    if (!profile.availability.recurringSchedule) {
+      profile.availability.recurringSchedule = {
+        daySchedules: {
+          '0': [{ start: "09:00 AM", end: "05:00 PM" }],
+          '1': [{ start: "09:00 AM", end: "05:00 PM" }],
+          '2': [{ start: "09:00 AM", end: "05:00 PM" }],
+          '3': [{ start: "09:00 AM", end: "05:00 PM" }],
+          '4': [{ start: "09:00 AM", end: "05:00 PM" }],
+          '5': [],
+          '6': [],
+        },
+      };
+      await profile.save();
+    }
+
+    // Initialize daySchedules if it doesn't exist (for backward compatibility)
+    if (!profile.availability.recurringSchedule.daySchedules) {
+      profile.availability.recurringSchedule.daySchedules = {
+        '0': [{ start: "09:00 AM", end: "05:00 PM" }],
+        '1': [{ start: "09:00 AM", end: "05:00 PM" }],
+        '2': [{ start: "09:00 AM", end: "05:00 PM" }],
+        '3': [{ start: "09:00 AM", end: "05:00 PM" }],
+        '4': [{ start: "09:00 AM", end: "05:00 PM" }],
+        '5': [],
+        '6': [],
+      };
+      await profile.save();
+    }
+
+    if (!profile.availability.blockedDates) {
+      profile.availability.blockedDates = [];
+      await profile.save();
     }
 
     return res.status(200).json({
       success: true,
-      data: availability,
+      data: profile.availability,
     });
   } catch (error) {
     console.error('Get availability error:', error);
@@ -165,9 +205,32 @@ export const updateCoachAvailability = async (req, res) => {
       });
     }
 
+    // Initialize availability if it doesn't exist
+    if (!profile.availability) {
+      profile.availability = {
+        recurringSchedule: {
+          daySchedules: {},
+        },
+        blockedDates: [],
+      };
+    }
+
     // Update availability
     if (recurringSchedule) {
-      profile.availability.recurringSchedule = recurringSchedule;
+      if (!profile.availability.recurringSchedule) {
+        profile.availability.recurringSchedule = {};
+      }
+      // Support both new daySchedules format and legacy format
+      if (recurringSchedule.daySchedules) {
+        profile.availability.recurringSchedule.daySchedules = recurringSchedule.daySchedules;
+      }
+      // Legacy support
+      if (recurringSchedule.activeDays) {
+        profile.availability.recurringSchedule.activeDays = recurringSchedule.activeDays;
+      }
+      if (recurringSchedule.timeIntervals) {
+        profile.availability.recurringSchedule.timeIntervals = recurringSchedule.timeIntervals;
+      }
     }
     if (blockedDates !== undefined) {
       profile.availability.blockedDates = blockedDates;

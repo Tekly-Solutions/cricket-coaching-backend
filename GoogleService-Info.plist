@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CLIENT_ID</key>
+	<string>718597555031-db5tumrmeho1dr1s5jm3o8mt0cerpug9.apps.googleusercontent.com</string>
+	<key>REVERSED_CLIENT_ID</key>
+	<string>com.googleusercontent.apps.718597555031-db5tumrmeho1dr1s5jm3o8mt0cerpug9</string>
+	<key>API_KEY</key>
+	<string>AIzaSyCiFBPTXI6uSxhFX0LCrz210xazQnrsvv0</string>
+	<key>GCM_SENDER_ID</key>
+	<string>718597555031</string>
+	<key>PLIST_VERSION</key>
+	<string>1</string>
+	<key>BUNDLE_ID</key>
+	<string>com.example.cricketcoachflutter</string>
+	<key>PROJECT_ID</key>
+	<string>burl-ad60f</string>
+	<key>STORAGE_BUCKET</key>
+	<string>burl-ad60f.firebasestorage.app</string>
+	<key>IS_ADS_ENABLED</key>
+	<false></false>
+	<key>IS_ANALYTICS_ENABLED</key>
+	<false></false>
+	<key>IS_APPINVITE_ENABLED</key>
+	<true></true>
+	<key>IS_GCM_ENABLED</key>
+	<true></true>
+	<key>IS_SIGNIN_ENABLED</key>
+	<true></true>
+	<key>GOOGLE_APP_ID</key>
+	<string>1:718597555031:ios:d301546333fec65762f412</string>
+</dict>
+</plist>

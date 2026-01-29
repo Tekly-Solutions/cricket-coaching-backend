@@ -98,6 +98,40 @@ export const createSession = async (req, res) => {
 
     const concreteSlots = generateTimeSlots(selectedDays, formattedTimeSlots);
 
+    // Check for session conflicts (overlapping time slots)
+    for (const slot of concreteSlots) {
+      const conflictingSessions = await Session.find({
+        coach: userId,
+        status: { $nin: ['cancelled'] },
+        $or: [
+          // New session starts during an existing session
+          {
+            'timeSlots.startTime': { $lte: slot.startTime },
+            'timeSlots.endTime': { $gt: slot.startTime },
+          },
+          // New session ends during an existing session
+          {
+            'timeSlots.startTime': { $lt: slot.endTime },
+            'timeSlots.endTime': { $gte: slot.endTime },
+          },
+          // New session completely contains an existing session
+          {
+            'timeSlots.startTime': { $gte: slot.startTime },
+            'timeSlots.endTime': { $lte: slot.endTime },
+          },
+        ],
+      });
+
+      if (conflictingSessions.length > 0) {
+        const conflictDate = slot.startTime.toLocaleDateString();
+        const conflictTime = slot.startTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        return res.status(400).json({
+          status: 'error',
+          message: `Session conflict: You already have a session scheduled on ${conflictDate} at ${conflictTime}`,
+        });
+      }
+    }
+
     const session = await Session.create({
       coach: userId,
       createdBy: userId,

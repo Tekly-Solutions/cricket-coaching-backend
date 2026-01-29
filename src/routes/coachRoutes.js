@@ -1,5 +1,5 @@
 import express from "express";
-import { jwtAuth } from "../middlewares/jwtAuthMiddleware.js";
+import { hybridAuth } from "../middlewares/hybridAuth.js";
 import { roleAuth } from "../middlewares/roleAuth.js";
 import {
   getCoachProfile,
@@ -15,49 +15,49 @@ const router = express.Router();
 
 router.get(
   "/profile",
-  jwtAuth,
+  hybridAuth,
   roleAuth("coach"),
   getCoachProfile
 );
 
 router.put(
   "/profile",
-  jwtAuth,
+  hybridAuth,
   roleAuth("coach"),
   updateCoachProfile
 );
 
 router.get(
   "/players",
-  jwtAuth,
+  hybridAuth,
   roleAuth("coach"),
   getCoachPlayers
 );
 
 router.get(
   "/availability",
-  jwtAuth,
+  hybridAuth,
   roleAuth("coach"),
   getCoachAvailability
 );
 
 router.put(
   "/availability",
-  jwtAuth,
+  hybridAuth,
   roleAuth("coach"),
   updateCoachAvailability
 );
 
 router.post(
   "/availability/blocked-date",
-  jwtAuth,
+  hybridAuth,
   roleAuth("coach"),
   addBlockedDate
 );
 
 router.delete(
   "/availability/blocked-date/:id",
-  jwtAuth,
+  hybridAuth,
   roleAuth("coach"),
   removeBlockedDate
 );
