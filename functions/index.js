@@ -9,6 +9,9 @@ setGlobalOptions({ maxInstances: 10 });
 
 // define secret
 const MONGO_URI = defineSecret("MONGO_URI");
+export const JWT_SECRET = defineSecret("JWT_SECRET");
+export const JWT_ACCESS_SECRET = defineSecret("JWT_ACCESS_SECRET");
+export const JWT_REFRESH_SECRET = defineSecret("JWT_REFRESH_SECRET");
 
 // connect DB once on cold start
 let isConnected = false;
