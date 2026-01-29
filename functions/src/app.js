@@ -30,13 +30,13 @@ app.get("/", (req, res) => {
 });
 
 // Routes
-app.use("/api/auth", authRoutes);
-app.use("/api/users", userRoutes);
-app.use("/api/coach", coachRoutes);
-app.use("/api/player", playerRouter);
-app.use("/api/guardian", guardianRouter);
-app.use("/api/sessions", sessionRoutes);
-app.use("/api/dashboard", dashboardRoutes);
-app.use("/api/bookings", bookingRoutes);
+app.use("/auth", authRoutes);
+app.use("/users", userRoutes);
+app.use("/coach", coachRoutes);
+app.use("/player", playerRouter);
+app.use("/guardian", guardianRouter);
+app.use("/sessions", sessionRoutes);
+app.use("/dashboard", dashboardRoutes);
+app.use("/bookings", bookingRoutes);
 
 export default app;
