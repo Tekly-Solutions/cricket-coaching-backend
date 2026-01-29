@@ -16,7 +16,8 @@ let isConnected = false;
 async function initDB() {
   if (isConnected) return;
 
-  await connectDB(process.env.MONGO_URI);
+//   await connectDB(process.env.MONGO_URI);
+await connectDB(MONGO_URI.value());
   isConnected = true;
   console.log("MongoDB connected");
 }
