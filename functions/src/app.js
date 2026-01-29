@@ -1,6 +1,3 @@
-import dotenv from "dotenv";
-dotenv.config();
-
 import express from "express";
 import cors from "cors";
 import morgan from "morgan";
@@ -16,24 +13,23 @@ import bookingRoutes from "./routes/bookingRoutes.js";
 const app = express();
 
 // CORS configuration for mobile apps
-// Mobile apps don't have a specific origin, so we need to allow all
 app.use(
   cors({
-    origin: '*', // Allow all origins for mobile apps
-    credentials: false, // Set to false when using origin: '*'
+    origin: '*', // Allow all origins
+    credentials: false,
   })
 );
 
-const PORT = process.env.PORT || 4000;
-
 app.use(morgan("dev"));
-
 app.use(express.json());
 
+const PORT = process.env.PORT || 4000;
+
 app.get("/", (req, res) => {
-  res.send(`Server is running on http://localhost:${PORT}`);
+  res.send(`Server is running locally on http://localhost:${PORT}`);
 });
 
+// Routes
 app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/coach", coachRoutes);
