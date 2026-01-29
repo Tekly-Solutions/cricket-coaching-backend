@@ -6,6 +6,8 @@ import { connectDB } from "./src/config/db.js";
 // Optional: limit max instances to control cost
 setGlobalOptions({ maxInstances: 10 });
 
+const MONGO_URI = defineSecret("MONGO_URI");
+
 // Connect to MongoDB once at cold start
 const startServer = async () => {
   try {
@@ -20,4 +22,9 @@ const startServer = async () => {
 startServer();
 
 // Export Express app as HTTPS Firebase function
-export const api = onRequest(app);
+export const api = onRequest(
+    {
+        secrets: [MONGO_URI],
+    },
+    app
+);
