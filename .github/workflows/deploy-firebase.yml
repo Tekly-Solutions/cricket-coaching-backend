@@ -1,0 +1,38 @@
+name: Deploy Firebase Functions
+
+on:
+  push:
+    branches:
+      - deploy-firebase  # branch that triggers deploy
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    env: # Inject GitHub secrets as environment variables
+      MONGO_URI: ${{ secrets.MONGO_URI }}
+      JWT_SECRET: ${{ secrets.JWT_SECRET }}
+      JWT_EXPIRES_IN: ${{ secrets.JWT_EXPIRES_IN }}
+      JWT_ACCESS_SECRET: ${{ secrets.JWT_ACCESS_SECRET }}
+      JWT_REFRESH_SECRET: ${{ secrets.JWT_REFRESH_SECRET }}
+      JWT_ACCESS_EXPIRES_IN: ${{ secrets.JWT_ACCESS_EXPIRES_IN }}
+      JWT_REFRESH_EXPIRES_IN: ${{ secrets.JWT_REFRESH_EXPIRES_IN }}
+      FRONTEND_URLS: ${{ secrets.FRONTEND_URLS }}
+      FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}  # Firebase CI token you generated
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '22'  # Match your backend Node.js version
+
+      - name: Install dependencies
+        working-directory: ./functions
+        run: npm install
+
+      - name: Deploy to Firebase
+        working-directory: ./functions
+        run: npx firebase deploy --only functions
