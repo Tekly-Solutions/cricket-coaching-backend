@@ -6,28 +6,41 @@ import bcrypt from 'bcryptjs';
 import CoachProfile from "../models/CoachProfile.js";
 import PlayerProfile from "../models/PlayerProfile.js";
 import GuardianProfile from "../models/GuardianProfile.js";
+import Notification from "../models/Notification.js";
 
 export const signup = async (req, res) => {
   const session = await User.startSession();
   session.startTransaction();
 
   try {
+    console.log('🔵 Signup request received');
+    console.log('📦 Request body:', req.body);
+    console.log('🔑 Firebase user:', req.firebaseUser);
+
     const { fullName, role } = req.body;
     const { uid, email } = req.firebaseUser;
 
     if (!fullName || !role) {
+      console.log('❌ Missing fields:', { fullName, role });
       return res.status(400).json({
         message: "Missing fields"
       });
     }
 
+    // Check if user already exists
     const existingUser = await User.findOne({ firebaseUid: uid });
     if (existingUser) {
-      return res.status(409).json({
-        message: "User already exists"
+      console.log('✅ User already exists in MongoDB:', existingUser.email);
+      // Return existing user (idempotent - safe to call multiple times)
+      return res.status(200).json({
+        success: true,
+        message: "User already exists",
+        isNewUser: false,
+        user: existingUser,
       });
     }
 
+    console.log('🆕 Creating new user in MongoDB...');
     const user = await User.create(
       [
         {
@@ -76,18 +89,46 @@ export const signup = async (req, res) => {
     await session.commitTransaction();
     session.endSession();
 
+    console.log('✅ User created successfully in MongoDB:', user[0].email);
+
+    // Create welcome and profile completion notification
+    try {
+      await Notification.create({
+        recipient: user[0]._id,
+        type: 'profile_completion',
+        category: 'Other',
+        title: 'Complete Your Profile',
+        description: 'Welcome! Please complete your profile to get the most out of our platform.',
+        priority: 'high',
+        actionButton: {
+          text: 'Complete Profile',
+          action: 'view',
+          url: '/profile/edit',
+        },
+      });
+      console.log('✅ Welcome notification created');
+    } catch (notifError) {
+      console.log('⚠️ Failed to create welcome notification:', notifError);
+      // Don't fail the signup if notification creation fails
+    }
+
+    console.log('📤 Sending success response to client');
     return res.status(201).json({
       success: true,
       message: "User created successfully",
+      isNewUser: true,
       user: user[0],
     });
   } catch (error) {
     await session.abortTransaction();
     session.endSession();
 
+    console.error('❌ Signup error:', error);
+
     // 🔥 Rollback Firebase user if DB fails
     if (req.firebaseUser?.uid) {
       await admin.auth().deleteUser(req.firebaseUser.uid);
+      console.log('🔄 Firebase user deleted due to MongoDB error');
     }
 
     console.error("Signup error:", error);
@@ -322,6 +363,8 @@ export const loginLocal = async (req, res) => {
   try {
     const { email, password } = req.body;
 
+    console.log('🔐 Local login attempt for:', email);
+
     if (!email || !password) {
       return res.status(400).json({ message: "Missing credentials" });
     }
@@ -329,13 +372,18 @@ export const loginLocal = async (req, res) => {
     const user = await User.findOne({ email }).select('+password');
 
     if (!user) {
+      console.log('❌ User not found:', email);
       return res.status(404).json({ success: false, message: "User not found." });
     }
 
     const isMatch = await bcrypt.compare(password, user.password || '');
     if (!isMatch) {
+      console.log('❌ Invalid password for:', email);
       return res.status(400).json({ success: false, message: "Invalid credentials." });
     }
+
+    console.log('✅ Local login successful for:', email);
+    console.log('👤 User role:', user.role);
 
     // Generate tokens
     const accessToken = signAccessToken({
@@ -353,9 +401,15 @@ export const loginLocal = async (req, res) => {
     return res.status(200).json({
       success: true,
       message: "Login successful",
-      token: accessToken, // Frontend expects 'token'
+      accessToken, // Changed from 'token' to 'accessToken' for frontend consistency
       refreshToken,
-      user,
+      user: {
+        id: user._id,
+        email: user.email,
+        fullName: user.fullName,
+        role: user.role,
+        firebaseUid: user.firebaseUid,
+      },
     });
   } catch (error) {
     console.error("Login Local error:", error);

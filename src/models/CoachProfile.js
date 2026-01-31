@@ -56,11 +56,68 @@ const coachProfileSchema = new mongoose.Schema(
       default: 0,
     },
 
+    // Location
+    city: {
+      type: String,
+      trim: true,
+      maxlength: 100,
+    },
+
+    // Default Pricing for Individual Bookings
+    defaultPricing: {
+      hourlyRate: {
+        type: Number,
+        min: 0,
+        default: 0,
+      },
+      currency: {
+        type: String,
+        default: 'USD',
+      },
+      sessionDuration: {
+        type: Number,  // in minutes
+        default: 60,
+        min: 15,
+        max: 240,
+      },
+    },
+
     aboutMe: {
       type: String,
       maxlength: 1200,
       trim: true,
       // bio shown in Edit Profile & possibly public coach profile
+    },
+
+    // Cricket-specific details
+    coachingPhilosophy: {
+      type: String,
+      trim: true,
+      maxlength: 500,
+    },
+
+    notableAchievements: {
+      type: [String],
+      default: [],
+      // e.g., ["Coached U19 State Team", "Former First Class Player"]
+    },
+
+    playingCareerBackground: {
+      type: String,
+      trim: true,
+      maxlength: 500,
+    },
+
+    ageGroupsCoached: {
+      type: [String],
+      default: [],
+      // e.g., ["U12", "U15", "U19", "Senior", "Professional"]
+    },
+
+    sessionTypesOffered: {
+      type: [String],
+      default: [],
+      // e.g., ["1-on-1", "Group Training", "Video Analysis", "Fitness Training"]
     },
 
     // From ProUpgradeScreen / subscription badge
@@ -106,10 +163,53 @@ const coachProfileSchema = new mongoose.Schema(
       max: 100,
     },
 
-    // Optional — if coaches set availability (future feature)
+    // Availability Management
     availability: {
-      type: [String],
-      default: [], // e.g. ["Mon-Fri 16:00-20:00", "Sat 09:00-13:00"]
+      // Recurring weekly schedule
+      recurringSchedule: {
+        // Per-day schedules (0=Monday, 1=Tuesday, ..., 6=Sunday)
+        daySchedules: {
+          type: Map,
+          of: [{
+            start: { type: String, required: true }, // "09:00 AM"
+            end: { type: String, required: true },   // "05:00 PM"
+          }],
+          default: () => ({
+            '0': [{ start: "09:00 AM", end: "05:00 PM" }], // Monday
+            '1': [{ start: "09:00 AM", end: "05:00 PM" }], // Tuesday
+            '2': [{ start: "09:00 AM", end: "05:00 PM" }], // Wednesday
+            '3': [{ start: "09:00 AM", end: "05:00 PM" }], // Thursday
+            '4': [{ start: "09:00 AM", end: "05:00 PM" }], // Friday
+            '5': [], // Saturday - no schedule
+            '6': [], // Sunday - no schedule
+          }),
+        },
+        // Legacy fields for backward compatibility
+        activeDays: {
+          type: [Number],
+          default: undefined,
+        },
+        timeIntervals: {
+          type: [{
+            start: { type: String },
+            end: { type: String },
+          }],
+          default: undefined,
+        },
+      },
+      
+      // Blocked dates (vacations, holidays)
+      blockedDates: {
+        type: [{
+          title: { type: String, required: true },
+          startDate: { type: Date, required: true },
+          endDate: { type: Date, required: true },
+          icon: { type: String, default: 'block' },
+          color: { type: String, default: 'red' },
+          createdAt: { type: Date, default: Date.now },
+        }],
+        default: [],
+      },
     },
   },
   { timestamps: true }

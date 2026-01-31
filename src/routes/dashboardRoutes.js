@@ -1,5 +1,5 @@
 import express from 'express';
-import { jwtAuth } from '../middlewares/jwtAuthMiddleware.js';
+import { hybridAuth } from '../middlewares/hybridAuth.js';
 import { roleAuth } from '../middlewares/roleAuth.js';
 import {
     getCoachDashboard,
@@ -9,8 +9,8 @@ import {
 
 const router = express.Router();
 
-// All dashboard routes require authentication
-router.use(jwtAuth);
+// All dashboard routes require authentication (supports both Firebase and JWT)
+router.use(hybridAuth);
 
 // Role-specific dashboard endpoints
 router.get('/coach', roleAuth('coach'), getCoachDashboard);

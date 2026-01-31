@@ -1,25 +1,65 @@
 import express from "express";
-import { jwtAuth } from "../middlewares/jwtAuthMiddleware.js";
+import { hybridAuth } from "../middlewares/hybridAuth.js";
 import { roleAuth } from "../middlewares/roleAuth.js";
 import {
   getCoachProfile,
   updateCoachProfile,
+  getCoachPlayers,
+  getCoachAvailability,
+  updateCoachAvailability,
+  addBlockedDate,
+  removeBlockedDate,
 } from "../controllers/coachController.js";
 
 const router = express.Router();
 
 router.get(
   "/profile",
-  jwtAuth,
+  hybridAuth,
   roleAuth("coach"),
   getCoachProfile
 );
 
 router.put(
   "/profile",
-  jwtAuth,
+  hybridAuth,
   roleAuth("coach"),
   updateCoachProfile
+);
+
+router.get(
+  "/players",
+  hybridAuth,
+  roleAuth("coach"),
+  getCoachPlayers
+);
+
+router.get(
+  "/availability",
+  hybridAuth,
+  roleAuth("coach"),
+  getCoachAvailability
+);
+
+router.put(
+  "/availability",
+  hybridAuth,
+  roleAuth("coach"),
+  updateCoachAvailability
+);
+
+router.post(
+  "/availability/blocked-date",
+  hybridAuth,
+  roleAuth("coach"),
+  addBlockedDate
+);
+
+router.delete(
+  "/availability/blocked-date/:id",
+  hybridAuth,
+  roleAuth("coach"),
+  removeBlockedDate
 );
 
 export default router;

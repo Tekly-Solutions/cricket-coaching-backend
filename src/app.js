@@ -12,6 +12,9 @@ import guardianRouter from "./routes/guardianRoutes.js";
 import sessionRoutes from "./routes/sessionRoutes.js";
 import dashboardRoutes from "./routes/dashboardRoutes.js";
 import bookingRoutes from "./routes/bookingRoutes.js";
+import earningsRoutes from "./routes/earnings.js";
+import notificationRoutes from "./routes/notifications.js";
+import searchRoutes from "./routes/searchRoutes.js";
 import adminRouter from "./routes/adminRoutes.js";
 import cookieParser from "cookie-parser";
 
@@ -47,6 +50,9 @@ app.use("/api/guardian", guardianRouter);
 app.use("/api/sessions", sessionRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/bookings", bookingRoutes);
+app.use("/api/earnings", earningsRoutes);
+app.use("/api/notifications", notificationRoutes);
+app.use("/api/search", searchRoutes);
 
 /* Admin routes */
 app.use("/api/admin", adminRouter);

@@ -1,6 +1,6 @@
 // routes/guardianRoutes.js
 import express from "express";
-import { jwtAuth } from "../middlewares/jwtAuthMiddleware.js";
+import { hybridAuth } from '../middlewares/hybridAuth.js';
 import { roleAuth } from "../middlewares/roleAuth.js";
 import {
   getGuardianProfile,
@@ -12,7 +12,7 @@ import {
 
 const router = express.Router();
 
-router.use(jwtAuth);
+router.use(hybridAuth);
 
 router.get("/profile", roleAuth("guardian"), getGuardianProfile);
 router.put("/profile", roleAuth("guardian"), updateGuardianProfile);

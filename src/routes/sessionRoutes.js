@@ -9,7 +9,7 @@ import {
   addPlayerToSession,
   getSessionStats,
 } from '../controllers/sessionController.js';
-import { jwtAuth } from '../middlewares/jwtAuthMiddleware.js';
+import { hybridAuth } from '../middlewares/hybridAuth.js';
 import { roleAuth } from '../middlewares/roleAuth.js';
 
 // import { jwtAuth } from '../middlewares/jwtAuth.js';     // your token verifier
@@ -18,7 +18,7 @@ import { roleAuth } from '../middlewares/roleAuth.js';
 const router = express.Router();
 
 // All session routes require a valid JWT first
-router.use(jwtAuth);
+router.use(hybridAuth);
 
 // Then we restrict most actions to coaches only
 // (adjust roles array if your role is named differently, e.g. "coach" vs "Coach")
@@ -34,7 +34,7 @@ router
 
 router
   .route('/:id')
-  .get(jwtAuth, getSessionById)             // anyone logged in can view details (or tighten to coachOnly)
+  .get(getSessionById)                      // anyone logged in can view details (hybridAuth already applied)
   .put(coachOnly, updateSession)            // only creator/coach
   .delete(coachOnly, deleteSession);        // only creator/coach
 

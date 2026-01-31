@@ -1,19 +1,19 @@
 import express from "express";
-import { jwtAuth } from "../middlewares/jwtAuthMiddleware.js";
+import { hybridAuth } from "../middlewares/hybridAuth.js";
 import { getUserProfile, updateUserProfile } from "../controllers/userController.js";
 import { getProfile, updateProfile, updateProfileImage } from "../controllers/profileController.js";
 
 const router = express.Router();
 
 // Get own profile
-router.get("/me", jwtAuth, getUserProfile);
+router.get("/me", hybridAuth, getUserProfile);
 
 // Update own profile
-router.put("/me", jwtAuth, updateUserProfile);
+router.put("/me", hybridAuth, updateUserProfile);
 
 // Profile management endpoints
-router.get("/profile", jwtAuth, getProfile);
-router.put("/profile", jwtAuth, updateProfile);
-router.put("/profile/image", jwtAuth, updateProfileImage);
+router.get("/profile", hybridAuth, getProfile);
+router.put("/profile", hybridAuth, updateProfile);
+router.put("/profile/image", hybridAuth, updateProfileImage);
 
 export default router;
