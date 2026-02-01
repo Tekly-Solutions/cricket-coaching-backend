@@ -1,9 +1,9 @@
 import Admin from "../../models/Admin.js";
 import { signAdminAccessToken } from "../../utils/adminJwt.js";
 import { getCookieOptions } from "../../utils/cookieOptions.js";
-import {
-  NODE_ENV,
-} from "../../config/secrets.js";
+// import {
+//   NODE_ENV,
+// } from "../../config/secrets.js";
 
 const cookieOptions = getCookieOptions();
 
