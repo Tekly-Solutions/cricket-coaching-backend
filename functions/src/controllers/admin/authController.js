@@ -5,7 +5,7 @@ import { getCookieOptions } from "../../utils/cookieOptions.js";
 //   NODE_ENV,
 // } from "../../config/secrets.js";
 
-const cookieOptions = getCookieOptions();
+// const cookieOptions = getCookieOptions();
 
 /**
  * POST /api/admin/login
@@ -87,13 +87,17 @@ export const adminLogin = async (req, res) => {
  */
 export const adminLogout = async (req, res) => {
   try {
+
+    const cookieOptions = getCookieOptions();
+
     // Clear the cookie
-    res.clearCookie("adminToken", {
-      httpOnly: true,
-      secure: NODE_ENV.value() === "production",
-      sameSite: "strict",
-      path: "/",
-    });
+    // res.clearCookie("adminToken", {
+    //   httpOnly: true,
+    //   secure: NODE_ENV.value() === "production",
+    //   sameSite: "strict",
+    //   path: "/",
+    // });
+    res.clearCookie("adminToken", cookieOptions.adminToken);
 
     return res.status(200).json({
       success: true,
