@@ -6,28 +6,44 @@ import bcrypt from 'bcryptjs';
 import CoachProfile from "../models/CoachProfile.js";
 import PlayerProfile from "../models/PlayerProfile.js";
 import GuardianProfile from "../models/GuardianProfile.js";
+import Notification from "../models/Notification.js";
 
 export const signup = async (req, res) => {
   const session = await User.startSession();
   session.startTransaction();
 
   try {
-    const { fullName, role } = req.body;
+    console.log('🔵 Signup request received');
+    console.log('📦 Request body:', req.body);
+    console.log('🔑 Firebase user:', req.firebaseUser);
+
+    const { fullName } = req.body;
+    let { role } = req.body;
     const { uid, email } = req.firebaseUser;
 
     if (!fullName || !role) {
+      console.log('❌ Missing fields:', { fullName, role });
       return res.status(400).json({
         message: "Missing fields"
       });
     }
 
+    role = role.toLowerCase();
+
+    // Check if user already exists
     const existingUser = await User.findOne({ firebaseUid: uid });
     if (existingUser) {
-      return res.status(409).json({
-        message: "User already exists"
+      console.log('✅ User already exists in MongoDB:', existingUser.email);
+      // Return existing user (idempotent - safe to call multiple times)
+      return res.status(200).json({
+        success: true,
+        message: "User already exists",
+        isNewUser: false,
+        user: existingUser,
       });
     }
 
+    console.log('🆕 Creating new user in MongoDB...');
     const user = await User.create(
       [
         {
@@ -43,7 +59,7 @@ export const signup = async (req, res) => {
 
     // AUTO CREATE ROLE PROFILE
     if (role === "coach") {
-      await CoachProfile.create(
+      const profile = await CoachProfile.create(
         [
           {
             userId: user[0]._id,
@@ -53,10 +69,12 @@ export const signup = async (req, res) => {
         ],
         { session }
       );
+      user[0].coachProfile = profile[0]._id;
+      await user[0].save({ session });
     }
 
     if (role === "player") {
-      await PlayerProfile.create(
+      const profile = await PlayerProfile.create(
         [{
           userId: user[0]._id,
           role: 'player',
@@ -64,30 +82,62 @@ export const signup = async (req, res) => {
         }],
         { session }
       );
+      user[0].playerProfile = profile[0]._id;
+      await user[0].save({ session });
     }
 
     if (role === "guardian") {
-      await GuardianProfile.create(
+      const profile = await GuardianProfile.create(
         [{ userId: user[0]._id }],
         { session }
       );
+      user[0].guardianProfile = profile[0]._id;
+      await user[0].save({ session });
     }
 
     await session.commitTransaction();
     session.endSession();
 
+    console.log('✅ User created successfully in MongoDB:', user[0].email);
+
+    // Create welcome and profile completion notification
+    try {
+      await Notification.create({
+        recipient: user[0]._id,
+        type: 'profile_completion',
+        category: 'Other',
+        title: 'Complete Your Profile',
+        description: 'Welcome! Please complete your profile to get the most out of our platform.',
+        priority: 'high',
+        actionButton: {
+          text: 'Complete Profile',
+          action: 'view',
+          url: '/profile/edit',
+        },
+      });
+      console.log('✅ Welcome notification created');
+    } catch (notifError) {
+      console.log('⚠️ Failed to create welcome notification:', notifError);
+      // Don't fail the signup if notification creation fails
+    }
+
+    console.log('📤 Sending success response to client');
     return res.status(201).json({
       success: true,
       message: "User created successfully",
+      isNewUser: true,
       user: user[0],
     });
   } catch (error) {
     await session.abortTransaction();
     session.endSession();
 
+    console.error('❌ Signup error:', error);
+
     // 🔥 Rollback Firebase user if DB fails
     if (req.firebaseUser?.uid) {
       await admin.auth().deleteUser(req.firebaseUser.uid);
+      console.log('🔄 Firebase user deleted due to MongoDB error');
     }
 
     console.error("Signup error:", error);
@@ -164,7 +214,8 @@ export const continueWithProvider = async (req, res) => {
     if (isNewUser) {
       // Use Firebase displayName if fullName not provided in body
       const fullName = req.body.fullName || name || "Unnamed User";
-      const role = req.body.role; // still required from frontend
+      let role = req.body.role; // still required from frontend
+      if (role) role = role.toLowerCase();
 
       if (!role) {
         return res.status(400).json({
@@ -182,22 +233,28 @@ export const continueWithProvider = async (req, res) => {
 
       // AUTO CREATE ROLE PROFILE
       if (role === "coach") {
-        await CoachProfile.create({
+        const profile = await CoachProfile.create({
           userId: user._id,
           plan: "free",
         });
+        user.coachProfile = profile._id;
+        await user.save();
       }
 
       if (role === "player") {
-        await PlayerProfile.create({
+        const profile = await PlayerProfile.create({
           userId: user._id,
           role: "player",
           isSelfManaged: true,
         });
+        user.playerProfile = profile._id;
+        await user.save();
       }
 
       if (role === "guardian") {
-        await GuardianProfile.create({ userId: user._id });
+        const profile = await GuardianProfile.create({ userId: user._id });
+        user.guardianProfile = profile._id;
+        await user.save();
       }
 
     }
@@ -244,11 +301,13 @@ export const signupLocal = async (req, res) => {
   session.startTransaction();
 
   try {
-    const { name, email, password, role } = req.body; // Using 'name' to match frontend
+    let { name, email, password, role } = req.body; // Using 'name' to match frontend
 
     if (!name || !email || !password || !role) {
       return res.status(400).json({ message: "Missing fields" });
     }
+
+    role = role.toLowerCase();
 
     const existingUser = await User.findOne({ email });
     if (existingUser) {
@@ -274,20 +333,26 @@ export const signupLocal = async (req, res) => {
 
     // AUTO CREATE ROLE PROFILE
     if (role === "coach") {
-      await CoachProfile.create(
+      const profile = await CoachProfile.create(
         [{ userId: user[0]._id, plan: "free", isVerified: false }],
         { session }
       );
+      user[0].coachProfile = profile[0]._id;
+      await user[0].save({ session });
     } else if (role === "player") {
-      await PlayerProfile.create(
+      const profile = await PlayerProfile.create(
         [{ userId: user[0]._id, role: 'player', isSelfManaged: true }],
         { session }
       );
+      user[0].playerProfile = profile[0]._id;
+      await user[0].save({ session });
     } else if (role === "guardian") {
-      await GuardianProfile.create(
+      const profile = await GuardianProfile.create(
         [{ userId: user[0]._id }],
         { session }
       );
+      user[0].guardianProfile = profile[0]._id;
+      await user[0].save({ session });
     }
 
     await session.commitTransaction();
@@ -322,6 +387,8 @@ export const loginLocal = async (req, res) => {
   try {
     const { email, password } = req.body;
 
+    console.log('🔐 Local login attempt for:', email);
+
     if (!email || !password) {
       return res.status(400).json({ message: "Missing credentials" });
     }
@@ -329,13 +396,18 @@ export const loginLocal = async (req, res) => {
     const user = await User.findOne({ email }).select('+password');
 
     if (!user) {
+      console.log('❌ User not found:', email);
       return res.status(404).json({ success: false, message: "User not found." });
     }
 
     const isMatch = await bcrypt.compare(password, user.password || '');
     if (!isMatch) {
+      console.log('❌ Invalid password for:', email);
       return res.status(400).json({ success: false, message: "Invalid credentials." });
     }
+
+    console.log('✅ Local login successful for:', email);
+    console.log('👤 User role:', user.role);
 
     // Generate tokens
     const accessToken = signAccessToken({
@@ -353,9 +425,15 @@ export const loginLocal = async (req, res) => {
     return res.status(200).json({
       success: true,
       message: "Login successful",
-      token: accessToken, // Frontend expects 'token'
+      accessToken, // Changed from 'token' to 'accessToken' for frontend consistency
       refreshToken,
-      user,
+      user: {
+        id: user._id,
+        email: user.email,
+        fullName: user.fullName,
+        role: user.role,
+        firebaseUid: user.firebaseUid,
+      },
     });
   } catch (error) {
     console.error("Login Local error:", error);

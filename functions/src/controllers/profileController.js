@@ -9,33 +9,34 @@ import GuardianProfile from '../models/GuardianProfile.js';
  */
 export const getProfile = async (req, res) => {
     try {
-        const userId = req.user._id;
+        const userId = req.user.userId; // JWT has userId, not _id
         const userRole = req.user.role;
 
-        // Find user and populate role-specific profile
-        let user;
+        console.log('🔍 Profile fetch - userId:', userId, 'role:', userRole);
 
-        if (userRole === 'coach') {
-            user = await User.findById(userId)
-                .select('-password')
-                .populate('coachProfile');
-        } else if (userRole === 'player') {
-            user = await User.findById(userId)
-                .select('-password')
-                .populate('playerProfile');
-        } else if (userRole === 'guardian') {
-            user = await User.findById(userId)
-                .select('-password')
-                .populate('guardianProfile');
-        } else {
-            user = await User.findById(userId).select('-password');
-        }
+        // Find user
+        const user = await User.findById(userId).select('-password');
 
         if (!user) {
+            console.log('❌ User not found in database for userId:', userId);
             return res.status(404).json({ message: 'User not found' });
         }
 
-        res.json({ user });
+        // Fetch role-specific profile
+        let roleProfile = null;
+        if (userRole === 'coach') {
+            roleProfile = await CoachProfile.findOne({ userId: userId });
+        } else if (userRole === 'player') {
+            roleProfile = await PlayerProfile.findOne({ userId: userId });
+        } else if (userRole === 'guardian') {
+            roleProfile = await GuardianProfile.findOne({ userId: userId });
+        }
+
+        console.log('✅ User found:', user.fullName, user.email);
+        res.json({
+            user: user.toObject(),
+            profile: roleProfile
+        });
     } catch (error) {
         console.error('Get profile error:', error);
         res.status(500).json({ message: 'Server error', error: error.message });
@@ -48,9 +49,32 @@ export const getProfile = async (req, res) => {
  */
 export const updateProfile = async (req, res) => {
     try {
-        const userId = req.user._id;
+        const userId = req.user.userId; // JWT has userId, not _id
         const userRole = req.user.role;
-        const { fullName, email, phone, profileImage, bio, specializations, achievements, playingPosition, skillLevel } = req.body;
+        const {
+            fullName,
+            email,
+            phone,
+            profileImage,
+            // Coach-specific fields
+            bio,
+            city,
+            hourlyRate,
+            sessionDuration,
+            coachTitle,
+            specialties,
+            primarySpecialization,
+            certifications,
+            experienceYears,
+            coachingPhilosophy,
+            notableAchievements,
+            playingCareerBackground,
+            ageGroupsCoached,
+            sessionTypesOffered,
+            // Player-specific fields
+            playingPosition,
+            skillLevel
+        } = req.body;
 
         // Find user
         const user = await User.findById(userId);
@@ -61,7 +85,7 @@ export const updateProfile = async (req, res) => {
         // Update user fields
         if (fullName) user.fullName = fullName;
         if (email) user.email = email;
-        if (phone) user.phone = phone;
+        if (phone) user.phoneNumber = phone; // Map 'phone' to 'phoneNumber'
         if (profileImage) user.profileImage = profileImage;
 
         await user.save();
@@ -70,9 +94,27 @@ export const updateProfile = async (req, res) => {
         if (userRole === 'coach' && user.coachProfile) {
             const coachProfile = await CoachProfile.findById(user.coachProfile);
             if (coachProfile) {
-                if (bio) coachProfile.bio = bio;
-                if (specializations) coachProfile.specializations = specializations;
-                if (achievements) coachProfile.achievements = achievements;
+                // Update all coach fields if provided
+                if (bio !== undefined) coachProfile.aboutMe = bio;
+                if (city !== undefined) coachProfile.city = city;
+                if (hourlyRate !== undefined) {
+                    if (!coachProfile.defaultPricing) coachProfile.defaultPricing = {};
+                    coachProfile.defaultPricing.hourlyRate = hourlyRate;
+                }
+                if (sessionDuration !== undefined) {
+                    if (!coachProfile.defaultPricing) coachProfile.defaultPricing = {};
+                    coachProfile.defaultPricing.sessionDuration = sessionDuration;
+                }
+                if (coachTitle !== undefined) coachProfile.coachTitle = coachTitle;
+                if (specialties !== undefined) coachProfile.specialties = specialties;
+                if (primarySpecialization !== undefined) coachProfile.primarySpecialization = primarySpecialization;
+                if (certifications !== undefined) coachProfile.certifications = certifications;
+                if (experienceYears !== undefined) coachProfile.experienceYears = experienceYears;
+                if (coachingPhilosophy !== undefined) coachProfile.coachingPhilosophy = coachingPhilosophy;
+                if (notableAchievements !== undefined) coachProfile.notableAchievements = notableAchievements;
+                if (playingCareerBackground !== undefined) coachProfile.playingCareerBackground = playingCareerBackground;
+                if (ageGroupsCoached !== undefined) coachProfile.ageGroupsCoached = ageGroupsCoached;
+                if (sessionTypesOffered !== undefined) coachProfile.sessionTypesOffered = sessionTypesOffered;
                 await coachProfile.save();
             }
         } else if (userRole === 'player' && user.playerProfile) {
@@ -83,10 +125,11 @@ export const updateProfile = async (req, res) => {
                 await playerProfile.save();
             }
         } else if (userRole === 'guardian' && user.guardianProfile) {
-            // Guardian profile updates if needed
+            // Guardian profile updates
             const guardianProfile = await GuardianProfile.findById(user.guardianProfile);
             if (guardianProfile) {
-                // Add any guardian-specific fields here
+                // Update phone number in guardian profile too
+                if (phone) guardianProfile.phoneNumber = phone;
                 await guardianProfile.save();
             }
         }
@@ -125,7 +168,7 @@ export const updateProfile = async (req, res) => {
  */
 export const updateProfileImage = async (req, res) => {
     try {
-        const userId = req.user._id;
+        const userId = req.user.userId; // JWT has userId, not _id
 
         // Mock implementation - in production, upload to cloud storage
         // For now, just return a placeholder URL

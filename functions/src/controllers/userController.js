@@ -16,17 +16,29 @@ export const getUserProfile = async (req, res) => {
 
     let profile = null;
 
+    const role = user.role.toLowerCase();
+
     // Load role-specific profile
-    if (user.role === "coach") {
+    if (role === "coach") {
       profile = await CoachProfile.findOne({ userId: user._id }).lean();
+      if (!profile) {
+        // Lazy create if missing
+        profile = await CoachProfile.create({ userId: user._id, plan: "free", isVerified: false });
+      }
     }
 
-    if (user.role === "player") {
+    if (role === "player") {
       profile = await PlayerProfile.findOne({ userId: user._id }).lean();
+      if (!profile) {
+        profile = await PlayerProfile.create({ userId: user._id, role: 'player', isSelfManaged: true });
+      }
     }
 
-    if (user.role === "guardian") {
+    if (role === "guardian") {
       profile = await GuardianProfile.findOne({ userId: user._id }).lean();
+      if (!profile) {
+        profile = await GuardianProfile.create({ userId: user._id });
+      }
     }
 
     return res.status(200).json({
@@ -43,26 +55,15 @@ export const getUserProfile = async (req, res) => {
   }
 };
 
-// Update logged-in user's profile
-// export const updateUserProfile = async (req, res) => {
-//   try {
-//     const { fullName, email } = req.body;
-//     const user = await User.findByIdAndUpdate(
-//       req.user.userId,
-//       { fullName, email },
-//       { new: true }
-//     );
-//     res.json({ success: true, user });
-//   } catch (err) {
-//     console.error(err);
-//     res.status(500).json({ message: "Internal server error" });
-//   }
-// };
-
 
 export const updateUserProfile = async (req, res) => {
+  console.log("🚀🚀🚀 UPDATE PROFILE FUNCTION CALLED 🚀🚀🚀");
   try {
     const userId = req.user.userId;
+
+    console.log("📝 UPDATE PROFILE REQUEST:");
+    console.log("   Body:", JSON.stringify(req.body, null, 2));
+    console.log("   User ID:", userId);
 
     const user = await User.findById(userId);
     if (!user) {
@@ -76,20 +77,34 @@ export const updateUserProfile = async (req, res) => {
        1️⃣ UPDATE COMMON USER
     ======================= */
     const commonFields = ["fullName", "email"];
+
+    // Check for phone/phoneNumber and update user.phoneNumber
+    if (req.body.phone !== undefined) {
+      console.log("📞 Setting user.phoneNumber from 'phone':", req.body.phone);
+      user.phoneNumber = req.body.phone;
+    }
+    if (req.body.phoneNumber !== undefined) {
+      console.log("📞 Setting user.phoneNumber from 'phoneNumber':", req.body.phoneNumber);
+      user.phoneNumber = req.body.phoneNumber;
+    }
+
     commonFields.forEach((field) => {
       if (req.body[field] !== undefined) {
         user[field] = req.body[field];
       }
     });
 
+    console.log("💾 Saving user. phoneNumber value:", user.phoneNumber);
     await user.save();
+    console.log("✅ User saved successfully. Final phoneNumber:", user.phoneNumber);
 
     /* ======================
        2️⃣ UPDATE ROLE PROFILE
     ======================= */
     let profile = null;
+    const role = user.role.toLowerCase();
 
-    if (user.role === "coach") {
+    if (role === "coach") {
       const coachFields = [
         "profilePhoto",
         "coachType",
@@ -108,11 +123,11 @@ export const updateUserProfile = async (req, res) => {
       profile = await CoachProfile.findOneAndUpdate(
         { userId },
         updateData,
-        { new: true }
+        { new: true, upsert: true, setDefaultsOnInsert: true }
       );
     }
 
-    if (user.role === "player") {
+    if (role === "player") {
       const playerFields = [
         "profilePhoto",
         "age",
@@ -130,17 +145,29 @@ export const updateUserProfile = async (req, res) => {
       profile = await PlayerProfile.findOneAndUpdate(
         { userId },
         updateData,
-        { new: true }
+        { new: true, upsert: true, setDefaultsOnInsert: true }
       );
     }
 
-    if (user.role === "guardian") {
+    if (role === "guardian") {
       const guardianFields = [
         "profilePhoto",
-        "phone",
+        "address",
       ];
 
       const updateData = {};
+
+      // Map phone to phoneNumber
+      if (req.body.phone !== undefined) {
+        console.log("📞 Setting GuardianProfile.phoneNumber from 'phone':", req.body.phone);
+        updateData.phoneNumber = req.body.phone;
+      }
+      if (req.body.phoneNumber !== undefined) {
+        console.log("📞 Setting GuardianProfile.phoneNumber from 'phoneNumber':", req.body.phoneNumber);
+        updateData.phoneNumber = req.body.phoneNumber;
+      }
+      console.log("💾 GuardianProfile updateData:", updateData);
+
       guardianFields.forEach((field) => {
         if (req.body[field] !== undefined) {
           updateData[field] = req.body[field];
@@ -150,7 +177,7 @@ export const updateUserProfile = async (req, res) => {
       profile = await GuardianProfile.findOneAndUpdate(
         { userId },
         updateData,
-        { new: true }
+        { new: true, upsert: true, setDefaultsOnInsert: true }
       );
     }
 

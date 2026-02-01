@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import Booking from '../models/Booking.js';
 import Session from '../models/Session.js';
+import Notification from '../models/Notification.js';
 
 // Mock promo codes (in production, these would come from a database)
 const PROMO_CODES = {
@@ -100,6 +101,26 @@ export const createBooking = async (req, res) => {
             },
             { path: 'player', select: 'fullName email' },
         ]);
+
+        // Create notification for the coach
+        try {
+            await Notification.create({
+                recipient: session.coach._id,
+                sender: playerId,
+                type: 'booking_confirmed',
+                category: 'Schedule',
+                title: 'New Booking Confirmed',
+                description: `${booking.player.fullName} has booked your session "${session.title}" on ${requestedDate.toLocaleDateString()}`,
+                priority: 'high',
+                relatedEntity: {
+                    entityType: 'Booking',
+                    entityId: booking._id,
+                },
+            });
+        } catch (notifError) {
+            console.error('Failed to create notification:', notifError);
+            // Don't fail the booking if notification fails
+        }
 
         res.status(201).json({
             message: 'Booking created successfully',

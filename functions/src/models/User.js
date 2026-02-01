@@ -49,6 +49,19 @@ const userSchema = new mongoose.Schema(
     lastProfileUpdate: {
       type: Date,
     },
+    // Profile references (optional, profiles are stored separately)
+    coachProfile: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'CoachProfile',
+    },
+    playerProfile: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'PlayerProfile',
+    },
+    guardianProfile: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'GuardianProfile',
+    },
   },
   { timestamps: true }
 );

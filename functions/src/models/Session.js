@@ -74,6 +74,23 @@ const sessionSchema = new mongoose.Schema(
       default: 18,
     },
 
+    // Pricing for this specific session
+    pricing: {
+      amount: {
+        type: Number,
+        min: 0,
+        default: 0,
+      },
+      currency: {
+        type: String,
+        default: 'USD',
+      },
+      pricePerPerson: {
+        type: Boolean,
+        default: true,  // true = per person, false = per session
+      },
+    },
+
     // Players already assigned / invited
     assignedPlayers: [{
       player: {
