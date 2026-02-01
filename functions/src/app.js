@@ -66,21 +66,21 @@ app.get("/", (req, res) => {
   res.send(`Server is running on http://localhost:${PORT}`);
 });
 
-app.use("/api/auth", authRoutes);
-app.use("/api/users", userRoutes);
-app.use("/api/coach", coachRoutes);
-app.use("/api/player", playerRouter);
-app.use("/api/guardian", guardianRouter);
-app.use("/api/sessions", sessionRoutes);
-app.use("/api/dashboard", dashboardRoutes);
-app.use("/api/bookings", bookingRoutes);
-app.use("/api/earnings", earningsRoutes);
-app.use("/api/notifications", notificationRoutes);
-app.use("/api/search", searchRoutes);
-app.use("/api/payments", paymentRoutes);
+app.use("/auth", authRoutes);
+app.use("/users", userRoutes);
+app.use("/coach", coachRoutes);
+app.use("/player", playerRouter);
+app.use("/guardian", guardianRouter);
+app.use("/sessions", sessionRoutes);
+app.use("/dashboard", dashboardRoutes);
+app.use("/bookings", bookingRoutes);
+app.use("/earnings", earningsRoutes);
+app.use("/notifications", notificationRoutes);
+app.use("/search", searchRoutes);
+app.use("/payments", paymentRoutes);
 
 
 /* Admin routes */
-app.use("/api/admin", adminRouter);
+app.use("/admin", adminRouter);
 
 export default app;
