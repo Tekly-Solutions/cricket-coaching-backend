@@ -8,7 +8,7 @@ import {
   JWT_REFRESH_SECRET,
   ADMIN_JWT_SECRET,
   STRIPE_SECRET_KEY,
-  NODE_ENV,
+  // NODE_ENV,
 } from "./src/config/secrets.js";
 
 setGlobalOptions({ maxInstances: 10 });
@@ -29,7 +29,7 @@ export const api = onRequest(
       JWT_REFRESH_SECRET,
       ADMIN_JWT_SECRET,
       STRIPE_SECRET_KEY,
-      NODE_ENV,
+      // NODE_ENV,
     ],
   },
   async (req, res) => {
