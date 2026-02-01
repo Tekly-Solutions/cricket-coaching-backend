@@ -27,7 +27,7 @@ app.use(cookieParser()); // IMPORTANT for req.cookies
 // Mobile apps don't have a specific origin, so we need to allow all
 app.use(
   cors({
-    origin: '*', // Allow all origins for mobile apps
+    origin: 'http://localhost:5173', // Allow all origins for mobile apps
     credentials: true, // needed for cookies
   })
 );

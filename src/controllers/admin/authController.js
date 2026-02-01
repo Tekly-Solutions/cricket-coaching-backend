@@ -102,3 +102,47 @@ export const adminLogout = async (req, res) => {
     });
   }
 };
+
+
+/**
+ * GET /api/admin/me
+ * Admin-only: Get current authenticated admin's profile/info
+ * Returns basic admin details (safe, no password)
+ */
+export const getAdminMe = async (req, res) => {
+  try {
+    // req.admin is attached by adminAuth middleware
+    const adminId = req.admin.adminId;
+
+    const admin = await Admin.findById(adminId)
+      .select("-password -loginAttempts -lockUntil") // exclude sensitive fields
+      .lean();
+
+    if (!admin) {
+      return res.status(404).json({
+        success: false,
+        message: "Admin not found",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        id: admin._id,
+        email: admin.email,
+        fullName: admin.fullName,
+        role: admin.role,
+        isActive: admin.isActive,
+        lastLogin: admin.lastLogin,
+        createdAt: admin.createdAt,
+        updatedAt: admin.updatedAt,
+      },
+    });
+  } catch (error) {
+    console.error("Admin /me error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch admin profile",
+    });
+  }
+};

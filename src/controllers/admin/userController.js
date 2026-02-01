@@ -3,18 +3,12 @@ import CoachProfile from "../../models/CoachProfile.js";
 import mongoose from "mongoose";
 import GuardianProfile from "../../models/GuardianProfile.js";
 import PlayerProfile from "../../models/PlayerProfile.js";
+import { calculateCoachCompletionRatio } from "../../utils/coachUtils.js";
+import Booking from "../../models/Booking.js";
 
 /**
  * GET /api/admin/coaches
- * Admin-only: Fetch all coaches with filters, search, pagination
- *
- * Query params:
- *   - page: number (default 1)
- *   - limit: number (default 10)
- *   - search: string (name or email)
- *   - plan: free | pro | elite | all (default all)
- *   - status: active | suspended | pending_payout | all (default all)
- *   - sort: name | -name | createdAt | -createdAt (default -createdAt)
+ * Admin-only: Fetch all coaches with filters, search, pagination + real earnings & bookings
  */
 export const getAllCoaches = async (req, res) => {
   try {
@@ -29,7 +23,7 @@ export const getAllCoaches = async (req, res) => {
 
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
-    // Build base query on User
+    // Base query on User
     const query = { role: "coach" };
 
     // Search by name or email
@@ -44,7 +38,7 @@ export const getAllCoaches = async (req, res) => {
     const pipeline = [
       { $match: query },
 
-      // Join with CoachProfile
+      // Join CoachProfile
       {
         $lookup: {
           from: "coachprofiles",
@@ -55,17 +49,58 @@ export const getAllCoaches = async (req, res) => {
       },
       { $unwind: { path: "$coachProfile", preserveNullAndEmptyArrays: true } },
 
-      // Optional plan filter
+      // Plan filter
       ...(plan !== "all" ? [{ $match: { "coachProfile.plan": plan } }] : []),
 
-      // Project only needed fields (clean & minimal)
+      // Join Earnings (confirmed/paid only) - unchanged
+      {
+        $lookup: {
+          from: "earnings",
+          localField: "_id",
+          foreignField: "coach",
+          as: "earnings",
+          pipeline: [
+            { $match: { status: { $in: ["confirmed", "paid"] } } },
+            {
+              $group: {
+                _id: null,
+                totalEarnings: { $sum: "$netAmount" },
+                totalSessions: { $sum: 1 }
+              }
+            }
+          ]
+        }
+      },
+      { $unwind: { path: "$earnings", preserveNullAndEmptyArrays: true } },
+
+      // NEW: Count real bookings from Booking collection (confirmed/pending only)
+      {
+        $lookup: {
+          from: "bookings",
+          localField: "_id",
+          foreignField: "session.coach", // ← match coach in session
+          as: "bookings",
+          pipeline: [
+            {
+              $match: {
+                status: { $in: ["pending", "confirmed"] } // active bookings only
+              }
+            },
+            { $count: "totalBookings" }
+          ]
+        }
+      },
+      { $unwind: { path: "$bookings", preserveNullAndEmptyArrays: true } },
+
+      // Project final fields
       {
         $project: {
           id: "$_id",
           name: "$fullName",
           email: "$email",
           plan: { $ifNull: ["$coachProfile.plan", "free"] },
-          bookings: { $ifNull: ["$coachProfile.playersCoachedCount", 0] },
+          // FIXED: use real booking count instead of playersCoachedCount
+          bookings: { $ifNull: ["$bookings.totalBookings", 0] },
           status: {
             $cond: {
               if: { $eq: ["$coachProfile.isVerified", true] },
@@ -73,25 +108,26 @@ export const getAllCoaches = async (req, res) => {
               else: "pending",
             },
           },
+          // Earnings from previous change
+          totalEarnings: { $ifNull: ["$earnings.totalEarnings", 0] },
+          totalSessions: { $ifNull: ["$earnings.totalSessions", 0] },
           createdAt: "$createdAt",
         },
       },
 
-      // Sort
+      // Sort & Pagination
       {
         $sort: sort.startsWith("-")
           ? { [sort.slice(1)]: -1 }
           : { [sort]: 1 },
       },
-
-      // Pagination
       { $skip: skip },
       { $limit: parseInt(limit) },
     ];
 
     const coaches = await User.aggregate(pipeline);
 
-    // Total count
+    // Total count (unchanged)
     const totalPipeline = [
       { $match: query },
       { $lookup: { from: "coachprofiles", localField: "_id", foreignField: "userId", as: "coachProfile" } },
@@ -122,10 +158,10 @@ export const getAllCoaches = async (req, res) => {
   }
 };
 
-
 /**
  * GET /api/admin/coaches/:id
  * Admin-only: Fetch full details of a single coach by user ID
+ * Includes real total bookings and session completion stats
  */
 export const getCoachById = async (req, res) => {
   try {
@@ -155,6 +191,31 @@ export const getCoachById = async (req, res) => {
     // Fetch CoachProfile
     const coachProfile = await CoachProfile.findOne({ userId: id }).lean();
 
+    // NEW: Get real total bookings count (pending + confirmed only)
+    const bookingStats = await Booking.aggregate([
+      {
+        $lookup: {
+          from: "sessions",
+          localField: "session",
+          foreignField: "_id",
+          as: "session",
+        },
+      },
+      { $unwind: "$session" },
+      {
+        $match: {
+          "session.coach": new mongoose.Types.ObjectId(id),
+          status: { $in: ["pending", "confirmed"] },
+        },
+      },
+      { $count: "totalBookings" },
+    ]);
+
+    const totalBookings = bookingStats[0]?.totalBookings || 0;
+
+    // NEW: Calculate completion ratio from sessions (from your existing util)
+    const completionStats = await calculateCoachCompletionRatio(id);
+
     // Combine data
     const coachData = {
       id: coachUser._id,
@@ -180,6 +241,15 @@ export const getCoachById = async (req, res) => {
       isVerified: coachProfile?.isVerified || false,
       profileCompletionPercentage: coachProfile?.profileCompletionPercentage || 0,
       availability: coachProfile?.availability || [],
+
+      // NEW: Real bookings count
+      totalBookings,
+
+      // Session completion stats
+      totalSessions: completionStats.totalSessions,
+      completedSessions: completionStats.completedSessions,
+      cancelledSessions: completionStats.cancelledSessions,
+      completionRatio: completionStats.completionRatio, // percentage (0–100)
     };
 
     return res.status(200).json({
