@@ -25,12 +25,34 @@ const app = express();
 // Enable cookie parsing (must come before routes)
 app.use(cookieParser()); // IMPORTANT for req.cookies
 
+// CORS configuration for both web and mobile apps
+const allowedOrigins = [
+  'http://localhost:5173',           // Vite dev server
+  'http://localhost:3000',           // Alternative dev port
+  // Mobile apps don't send Origin header, so we handle them separately
+];
+
 // CORS configuration for mobile apps
 // Mobile apps don't have a specific origin, so we need to allow all
 app.use(
   cors({
-    origin: 'http://localhost:5173', // Allow all origins for mobile apps
-    credentials: true, // needed for cookies
+    origin: function (origin, callback) {
+      // Allow requests with no origin (like mobile apps, Postman, curl)
+      if (!origin) {
+        return callback(null, true);
+      }
+      
+      // Check if the origin is in our allowed list
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+      
+      // Reject other origins
+      callback(new Error('Not allowed by CORS'));
+    },
+    credentials: true, // Allow cookies to be sent
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
   })
 );
 
