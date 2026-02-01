@@ -17,7 +17,8 @@ export const signup = async (req, res) => {
     console.log('📦 Request body:', req.body);
     console.log('🔑 Firebase user:', req.firebaseUser);
 
-    const { fullName, role } = req.body;
+    const { fullName } = req.body;
+    let { role } = req.body;
     const { uid, email } = req.firebaseUser;
 
     if (!fullName || !role) {
@@ -26,6 +27,8 @@ export const signup = async (req, res) => {
         message: "Missing fields"
       });
     }
+
+    role = role.toLowerCase();
 
     // Check if user already exists
     const existingUser = await User.findOne({ firebaseUid: uid });
@@ -56,7 +59,7 @@ export const signup = async (req, res) => {
 
     // AUTO CREATE ROLE PROFILE
     if (role === "coach") {
-      await CoachProfile.create(
+      const profile = await CoachProfile.create(
         [
           {
             userId: user[0]._id,
@@ -66,10 +69,12 @@ export const signup = async (req, res) => {
         ],
         { session }
       );
+      user[0].coachProfile = profile[0]._id;
+      await user[0].save({ session });
     }
 
     if (role === "player") {
-      await PlayerProfile.create(
+      const profile = await PlayerProfile.create(
         [{
           userId: user[0]._id,
           role: 'player',
@@ -77,13 +82,17 @@ export const signup = async (req, res) => {
         }],
         { session }
       );
+      user[0].playerProfile = profile[0]._id;
+      await user[0].save({ session });
     }
 
     if (role === "guardian") {
-      await GuardianProfile.create(
+      const profile = await GuardianProfile.create(
         [{ userId: user[0]._id }],
         { session }
       );
+      user[0].guardianProfile = profile[0]._id;
+      await user[0].save({ session });
     }
 
     await session.commitTransaction();
@@ -205,7 +214,8 @@ export const continueWithProvider = async (req, res) => {
     if (isNewUser) {
       // Use Firebase displayName if fullName not provided in body
       const fullName = req.body.fullName || name || "Unnamed User";
-      const role = req.body.role; // still required from frontend
+      let role = req.body.role; // still required from frontend
+      if (role) role = role.toLowerCase();
 
       if (!role) {
         return res.status(400).json({
@@ -223,22 +233,28 @@ export const continueWithProvider = async (req, res) => {
 
       // AUTO CREATE ROLE PROFILE
       if (role === "coach") {
-        await CoachProfile.create({
+        const profile = await CoachProfile.create({
           userId: user._id,
           plan: "free",
         });
+        user.coachProfile = profile._id;
+        await user.save();
       }
 
       if (role === "player") {
-        await PlayerProfile.create({
+        const profile = await PlayerProfile.create({
           userId: user._id,
           role: "player",
           isSelfManaged: true,
         });
+        user.playerProfile = profile._id;
+        await user.save();
       }
 
       if (role === "guardian") {
-        await GuardianProfile.create({ userId: user._id });
+        const profile = await GuardianProfile.create({ userId: user._id });
+        user.guardianProfile = profile._id;
+        await user.save();
       }
 
     }
@@ -285,11 +301,13 @@ export const signupLocal = async (req, res) => {
   session.startTransaction();
 
   try {
-    const { name, email, password, role } = req.body; // Using 'name' to match frontend
+    let { name, email, password, role } = req.body; // Using 'name' to match frontend
 
     if (!name || !email || !password || !role) {
       return res.status(400).json({ message: "Missing fields" });
     }
+
+    role = role.toLowerCase();
 
     const existingUser = await User.findOne({ email });
     if (existingUser) {
@@ -315,20 +333,26 @@ export const signupLocal = async (req, res) => {
 
     // AUTO CREATE ROLE PROFILE
     if (role === "coach") {
-      await CoachProfile.create(
+      const profile = await CoachProfile.create(
         [{ userId: user[0]._id, plan: "free", isVerified: false }],
         { session }
       );
+      user[0].coachProfile = profile[0]._id;
+      await user[0].save({ session });
     } else if (role === "player") {
-      await PlayerProfile.create(
+      const profile = await PlayerProfile.create(
         [{ userId: user[0]._id, role: 'player', isSelfManaged: true }],
         { session }
       );
+      user[0].playerProfile = profile[0]._id;
+      await user[0].save({ session });
     } else if (role === "guardian") {
-      await GuardianProfile.create(
+      const profile = await GuardianProfile.create(
         [{ userId: user[0]._id }],
         { session }
       );
+      user[0].guardianProfile = profile[0]._id;
+      await user[0].save({ session });
     }
 
     await session.commitTransaction();

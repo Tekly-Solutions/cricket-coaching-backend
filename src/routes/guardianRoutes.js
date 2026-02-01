@@ -8,6 +8,7 @@ import {
   addPlayerToGuardian,     // ← existing (if you want to keep userId method)
   createAndAddPlayer,      // ← NEW: create player + link
   getMyPlayers,
+  getPlayerDetails,
 } from "../controllers/guardianController.js";
 
 const router = express.Router();
@@ -24,5 +25,6 @@ router.post("/players/existing", roleAuth("guardian"), addPlayerToGuardian);
 router.post("/players", roleAuth("guardian"), createAndAddPlayer);
 
 router.get("/players", roleAuth("guardian"), getMyPlayers);
+router.get("/player/:id", roleAuth("guardian"), getPlayerDetails);
 
 export default router;

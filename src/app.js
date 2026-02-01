@@ -1,5 +1,5 @@
-// import dotenv from "dotenv";
-// dotenv.config();
+import dotenv from "dotenv";
+dotenv.config();
 
 import express from "express";
 import cors from "cors";
@@ -17,6 +17,8 @@ import notificationRoutes from "./routes/notifications.js";
 import searchRoutes from "./routes/searchRoutes.js";
 import adminRouter from "./routes/adminRoutes.js";
 import cookieParser from "cookie-parser";
+import paymentRoutes from "./routes/paymentRoutes.js";
+
 
 const app = express();
 
@@ -53,6 +55,8 @@ app.use("/api/bookings", bookingRoutes);
 app.use("/api/earnings", earningsRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/search", searchRoutes);
+app.use("/api/payments", paymentRoutes);
+
 
 /* Admin routes */
 app.use("/api/admin", adminRouter);
