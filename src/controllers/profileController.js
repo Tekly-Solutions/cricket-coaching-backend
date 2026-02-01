@@ -33,9 +33,9 @@ export const getProfile = async (req, res) => {
         }
 
         console.log('✅ User found:', user.fullName, user.email);
-        res.json({ 
+        res.json({
             user: user.toObject(),
-            profile: roleProfile 
+            profile: roleProfile
         });
     } catch (error) {
         console.error('Get profile error:', error);
@@ -85,7 +85,7 @@ export const updateProfile = async (req, res) => {
         // Update user fields
         if (fullName) user.fullName = fullName;
         if (email) user.email = email;
-        if (phone) user.phone = phone;
+        if (phone) user.phoneNumber = phone; // Map 'phone' to 'phoneNumber'
         if (profileImage) user.profileImage = profileImage;
 
         await user.save();
@@ -125,10 +125,11 @@ export const updateProfile = async (req, res) => {
                 await playerProfile.save();
             }
         } else if (userRole === 'guardian' && user.guardianProfile) {
-            // Guardian profile updates if needed
+            // Guardian profile updates
             const guardianProfile = await GuardianProfile.findById(user.guardianProfile);
             if (guardianProfile) {
-                // Add any guardian-specific fields here
+                // Update phone number in guardian profile too
+                if (phone) guardianProfile.phoneNumber = phone;
                 await guardianProfile.save();
             }
         }

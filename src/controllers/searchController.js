@@ -35,7 +35,7 @@ export const searchCoaches = async (req, res) => {
         role: 'coach',
         fullName: { $regex: query, $options: 'i' }
       }).select('_id');
-      
+
       const userIds = users.map(u => u._id);
 
       // Search in coach profiles by userId or specializations
@@ -225,6 +225,50 @@ export const searchAll = async (req, res) => {
     return res.status(500).json({
       status: 'error',
       message: 'Failed to search',
+    });
+  }
+};
+
+/**
+ * GET /api/search/coaches/:id
+ * Get detailed coach profile by ID
+ */
+export const getCoachDetails = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Find coach profile by CoachProfile ID or User ID?
+    // The route is /search/coaches/:id.
+    // Frontend passes `widget.coachId`. Let's assume it's the CoachProfile _id.
+    // However, it's safer to check if it's a valid ObjectId.
+
+    let coach = await CoachProfile.findById(id)
+      .populate('userId', 'fullName email profilePhoto phoneNumber') // Fetch user details
+      .lean();
+
+    // If not found by Profile ID, try finding by User ID
+    if (!coach) {
+      coach = await CoachProfile.findOne({ userId: id })
+        .populate('userId', 'fullName email profilePhoto phoneNumber')
+        .lean();
+    }
+
+    if (!coach) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'Coach not found',
+      });
+    }
+
+    return res.status(200).json({
+      status: 'success',
+      data: coach,
+    });
+  } catch (error) {
+    console.error('Get coach details error:', error);
+    return res.status(500).json({
+      status: 'error',
+      message: 'Failed to get coach details',
     });
   }
 };

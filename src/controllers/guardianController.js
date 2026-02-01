@@ -275,3 +275,47 @@ export const getMyPlayers = async (req, res) => {
     });
   }
 };
+
+/**
+ * GET /api/guardian/player/:id
+ * Get details of a specific player managed by guardian
+ */
+export const getPlayerDetails = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const guardianId = req.user.userId;
+
+    // Verify this player belongs to the guardian
+    const guardianProfile = await GuardianProfile.findOne({
+      userId: guardianId,
+      players: id,
+    });
+
+    if (!guardianProfile) {
+      return res.status(403).json({
+        status: "error",
+        message: "You do not have permission to view this player",
+      });
+    }
+
+    const playerProfile = await PlayerProfile.findById(id).lean();
+
+    if (!playerProfile) {
+      return res.status(404).json({
+        status: "error",
+        message: "Player not found",
+      });
+    }
+
+    return res.status(200).json({
+      status: "success",
+      data: playerProfile,
+    });
+  } catch (error) {
+    console.error("Get player details error:", error);
+    return res.status(500).json({
+      status: "error",
+      message: "Failed to fetch player details",
+    });
+  }
+};

@@ -25,10 +25,10 @@ export const hybridAuth = async (req, res, next) => {
       console.log("🔑 Attempting Firebase token verification...");
       const decodedToken = await admin.auth().verifyIdToken(token);
       console.log("✅ Firebase token verified for:", decodedToken.email);
-      
+
       // Find user in MongoDB
       const user = await User.findOne({ firebaseUid: decodedToken.uid });
-      
+
       if (user) {
         console.log("👤 User found via Firebase UID:", user.email, "Role:", user.role);
         req.user = {
@@ -48,17 +48,19 @@ export const hybridAuth = async (req, res, next) => {
           message: "User not found. Please complete signup.",
         });
       }
+
     } catch (firebaseError) {
       // Firebase verification failed, try JWT
-      console.log("⚠️ Firebase verification failed, trying JWT...");
-      
+      console.log("⚠️ Firebase verification failed:", firebaseError.message);
+      console.log("⚠️ Trying JWT...");
+
       try {
         const decoded = verifyAccessToken(token);
         console.log("✅ JWT token verified for user ID:", decoded.userId);
-        
+
         // Find user in MongoDB by ID
         const user = await User.findById(decoded.userId);
-        
+
         if (!user) {
           console.log("❌ User not found for JWT userId:", decoded.userId);
           return res.status(404).json({
@@ -66,7 +68,7 @@ export const hybridAuth = async (req, res, next) => {
             message: "User not found",
           });
         }
-        
+
         console.log("👤 User found via JWT:", user.email, "Role:", user.role);
         req.user = {
           userId: user._id.toString(),
