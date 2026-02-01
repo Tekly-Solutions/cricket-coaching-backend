@@ -3,7 +3,7 @@ import { signAdminAccessToken } from "../../utils/adminJwt.js";
 import cookieOptions from "../../utils/cookieOptions.js";
 import {
   NODE_ENV,
-} from "../config/secrets.js";
+} from "../../config/secrets.js";
 
 /**
  * POST /api/admin/login
