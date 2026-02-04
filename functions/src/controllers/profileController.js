@@ -12,13 +12,10 @@ export const getProfile = async (req, res) => {
         const userId = req.user.userId; // JWT has userId, not _id
         const userRole = req.user.role;
 
-        console.log('🔍 Profile fetch - userId:', userId, 'role:', userRole);
-
         // Find user
         const user = await User.findById(userId).select('-password');
 
         if (!user) {
-            console.log('❌ User not found in database for userId:', userId);
             return res.status(404).json({ message: 'User not found' });
         }
 
@@ -32,7 +29,6 @@ export const getProfile = async (req, res) => {
             roleProfile = await GuardianProfile.findOne({ userId: userId });
         }
 
-        console.log('✅ User found:', user.fullName, user.email);
         res.json({
             user: user.toObject(),
             profile: roleProfile
@@ -91,8 +87,31 @@ export const updateProfile = async (req, res) => {
         await user.save();
 
         // Update role-specific profile
-        if (userRole === 'coach' && user.coachProfile) {
-            const coachProfile = await CoachProfile.findById(user.coachProfile);
+        if (userRole === 'coach') {
+            let coachProfile;
+
+            // Check if coach profile exists
+            if (user.coachProfile) {
+                coachProfile = await CoachProfile.findById(user.coachProfile);
+            } else {
+                // No coach profile linked, try to find by userId
+                coachProfile = await CoachProfile.findOne({ userId: userId });
+
+                if (coachProfile) {
+                    // Found orphaned profile, link it to user
+                    user.coachProfile = coachProfile._id;
+                    await user.save();
+                } else {
+                    // No profile exists at all, create one
+                    coachProfile = await CoachProfile.create({
+                        userId: userId,
+                        profileCompletionPercentage: 20,
+                    });
+                    user.coachProfile = coachProfile._id;
+                    await user.save();
+                }
+            }
+
             if (coachProfile) {
                 // Update all coach fields if provided
                 if (bio !== undefined) coachProfile.aboutMe = bio;
@@ -115,6 +134,7 @@ export const updateProfile = async (req, res) => {
                 if (playingCareerBackground !== undefined) coachProfile.playingCareerBackground = playingCareerBackground;
                 if (ageGroupsCoached !== undefined) coachProfile.ageGroupsCoached = ageGroupsCoached;
                 if (sessionTypesOffered !== undefined) coachProfile.sessionTypesOffered = sessionTypesOffered;
+
                 await coachProfile.save();
             }
         } else if (userRole === 'player' && user.playerProfile) {
