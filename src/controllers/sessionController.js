@@ -40,6 +40,7 @@ export const createSession = async (req, res) => {
       location,
       capacity = 18,
       timeSlots = [],
+      explicitTimeSlots = [], // New parameter for specific slots
       selectedDays = [],
       isRecurring = false,
       participants = [],
@@ -55,48 +56,79 @@ export const createSession = async (req, res) => {
       });
     }
 
-    if (!selectedDays?.length) {
-      return res.status(400).json({
-        status: 'error',
-        message: 'At least one date must be selected',
+    let concreteSlots = [];
+
+    // CASE 1: Explicit Time Slots (New Logic)
+    // Used when frontend provides exact timestamps for every slot
+    if (explicitTimeSlots && explicitTimeSlots.length > 0) {
+      concreteSlots = explicitTimeSlots.map((slot, index) => {
+        const startTime = new Date(slot.startTime);
+        if (isNaN(startTime.getTime())) {
+          throw new Error(`Invalid start time in explicit slot ${index + 1}`);
+        }
+
+        const duration = Number(slot.durationMinutes);
+        if (!Number.isInteger(duration) || duration < 15 || duration > 240) {
+          throw new Error(`Duration must be between 15 and 240 minutes in explicit slot ${index + 1}`);
+        }
+
+        const endTime = new Date(startTime);
+        endTime.setMinutes(startTime.getMinutes() + duration);
+
+        return {
+          startTime,
+          endTime,
+          durationMinutes: duration,
+          bookedCount: 0
+        };
       });
     }
+    // CASE 2: Template-based Generation (Old Logic)
+    // Used when frontend provides days + template slots (Cartesian product)
+    else {
+      if (!selectedDays?.length) {
+        return res.status(400).json({
+          status: 'error',
+          message: 'At least one date must be selected',
+        });
+      }
 
-    if (!timeSlots?.length) {
-      return res.status(400).json({
-        status: 'error',
-        message: 'At least one time slot is required',
+      if (!timeSlots?.length) {
+        return res.status(400).json({
+          status: 'error',
+          message: 'At least one time slot is required',
+        });
+      }
+
+      // Validate and normalize timeSlots
+      const formattedTimeSlots = timeSlots.map((s, index) => {
+        if (
+          !s.startTime ||
+          typeof s.startTime.hour !== 'number' ||
+          typeof s.startTime.minute !== 'number'
+        ) {
+          throw new Error(`Invalid start time format in slot ${index + 1}`);
+        }
+        if (
+          !Number.isInteger(s.durationMinutes) ||
+          s.durationMinutes < 15 ||
+          s.durationMinutes > 240
+        ) {
+          throw new Error(
+            `Duration must be between 15 and 240 minutes in slot ${index + 1}`
+          );
+        }
+        return {
+          startTime: {
+            hour: Number(s.startTime.hour),
+            minute: Number(s.startTime.minute || 0),
+          },
+          durationMinutes: Number(s.durationMinutes),
+        };
       });
+
+      concreteSlots = generateTimeSlots(selectedDays, formattedTimeSlots);
     }
-
-    // Validate and normalize timeSlots
-    const formattedTimeSlots = timeSlots.map((s, index) => {
-      if (
-        !s.startTime ||
-        typeof s.startTime.hour !== 'number' ||
-        typeof s.startTime.minute !== 'number'
-      ) {
-        throw new Error(`Invalid start time format in slot ${index + 1}`);
-      }
-      if (
-        !Number.isInteger(s.durationMinutes) ||
-        s.durationMinutes < 15 ||
-        s.durationMinutes > 240
-      ) {
-        throw new Error(
-          `Duration must be between 15 and 240 minutes in slot ${index + 1}`
-        );
-      }
-      return {
-        startTime: {
-          hour: Number(s.startTime.hour),
-          minute: Number(s.startTime.minute || 0),
-        },
-        durationMinutes: Number(s.durationMinutes),
-      };
-    });
-
-    const concreteSlots = generateTimeSlots(selectedDays, formattedTimeSlots);
 
     // Check for session conflicts (overlapping time slots)
     for (const slot of concreteSlots) {
@@ -177,6 +209,7 @@ export const getCoachSessions = async (req, res) => {
 
     // Query params
     const type = (req.query.type || 'all').toLowerCase();
+    const dateParam = req.query.date; // YYYY-MM-DD
     const limit = parseInt(req.query.limit) || 10;
     const page = parseInt(req.query.page) || 1;
     const skip = (page - 1) * limit;
@@ -186,17 +219,43 @@ export const getCoachSessions = async (req, res) => {
     // Base query
     const query = { coach: userId };
 
-    // Filter by type
-    if (type === 'upcoming') {
-      query['timeSlots.startTime'] = { $gt: now };
-      query.status = { $nin: ['cancelled', 'completed'] };
-    } else if (type === 'past') {
-      query.$or = [
-        { 'timeSlots.endTime': { $lt: now } },
-        { status: 'completed' },
-      ];
+    // 📅 DATE FILTERING
+    if (dateParam) {
+      const selectedDate = new Date(dateParam);
+      if (!isNaN(selectedDate.getTime())) {
+        // Start of day (00:00:00)
+        const startOfDay = new Date(selectedDate);
+        startOfDay.setHours(0, 0, 0, 0);
+
+        // End of day (23:59:59)
+        const endOfDay = new Date(selectedDate);
+        endOfDay.setHours(23, 59, 59, 999);
+
+        // Find sessions that have at least one time slot overlapping with this day
+        // OR simpler: specific time slot starts within this day
+        query['timeSlots.startTime'] = {
+          $gte: startOfDay,
+          $lte: endOfDay,
+        };
+
+        // Ensure we don't show cancelled sessions for the day usage
+        query.status = { $ne: 'cancelled' };
+      }
     }
-    // 'all' → no extra filter
+    // FALLBACK TO TYPE FILTERING IF NO DATE
+    else {
+      // Filter by type
+      if (type === 'upcoming') {
+        query['timeSlots.startTime'] = { $gt: now };
+        query.status = { $nin: ['cancelled', 'completed'] };
+      } else if (type === 'past') {
+        query.$or = [
+          { 'timeSlots.endTime': { $lt: now } },
+          { status: 'completed' },
+        ];
+      }
+      // 'all' → no extra filter
+    }
 
     // Optional extra status filter
     if (req.query.status) {
@@ -205,11 +264,7 @@ export const getCoachSessions = async (req, res) => {
 
     // Fetch sessions
     const sessions = await Session.find(query)
-      .sort(
-        type === 'upcoming'
-          ? { 'timeSlots.startTime': 1 }   // soonest first
-          : { 'timeSlots.endTime': -1 }    // most recent past first
-      )
+      .sort({ 'timeSlots.startTime': 1 }) // Always sort by time ascending for calendar/upcoming
       .skip(skip)
       .limit(limit)
       .populate('assignedPlayers.player', 'fullName profilePhoto')
@@ -225,6 +280,7 @@ export const getCoachSessions = async (req, res) => {
       page,
       pages: Math.ceil(total / limit),
       type, // echo back the type for frontend clarity
+      date: dateParam,
       data: sessions,
     });
   } catch (error) {
@@ -266,7 +322,7 @@ export const getSessionById = async (req, res) => {
 
 export const updateSession = async (req, res) => {
   try {
-    const allowedFields = ['title', 'description', 'location', 'capacity'];
+    const allowedFields = ['title', 'description', 'location', 'capacity', 'pricing'];
     const updates = {};
 
     allowedFields.forEach((field) => {
