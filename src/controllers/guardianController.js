@@ -102,6 +102,7 @@ export const createAndAddPlayer = async (req, res) => {
       battingStyle = "",
       bowlingStyle = "",
       profilePhoto,
+      medicalIssues,
     } = req.body;
 
     // Validation
@@ -135,6 +136,7 @@ export const createAndAddPlayer = async (req, res) => {
       battingStyle,
       bowlingStyle,
       profilePhoto: profilePhoto || null,
+      medicalIssues: medicalIssues || "",
       guardianId: guardianId,
       isSelfManaged: false,
       isMinorWithoutUser: true,
@@ -316,6 +318,106 @@ export const getPlayerDetails = async (req, res) => {
     return res.status(500).json({
       status: "error",
       message: "Failed to fetch player details",
+    });
+  }
+};
+
+/**
+ * DELETE /api/guardian/player/:id
+ * Remove a player from guardian's managed players
+ */
+export const removePlayer = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const guardianId = req.user.userId;
+
+    // Verify this player belongs to the guardian
+    const guardianProfile = await GuardianProfile.findOne({
+      userId: guardianId,
+      players: id,
+    });
+
+    if (!guardianProfile) {
+      return res.status(403).json({
+        status: "error",
+        message: "You do not have permission to remove this player",
+      });
+    }
+
+    // Remove player from guardian's players array
+    await GuardianProfile.findOneAndUpdate(
+      { userId: guardianId },
+      { $pull: { players: id } }
+    );
+
+    // Delete the player profile
+    await PlayerProfile.findByIdAndDelete(id);
+
+    return res.status(200).json({
+      status: "success",
+      message: "Player removed successfully",
+    });
+  } catch (error) {
+    console.error("Remove player error:", error);
+    return res.status(500).json({
+      status: "error",
+      message: "Failed to remove player",
+    });
+  }
+};/**
+ * PUT /api/guardian/player/:id
+ * Update a player's profile
+ */
+export const updatePlayer = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const guardianId = req.user.userId;
+
+    const guardianProfile = await GuardianProfile.findOne({
+      userId: guardianId,
+      players: id,
+    });
+
+    if (!guardianProfile) {
+      return res.status(403).json({
+        status: "error",
+        message: "You do not have permission to update this player",
+      });
+    }
+
+    const { fullName, age, role, battingStyle, bowlingStyle, medicalIssues } = req.body;
+
+    const updateData = {};
+    if (fullName !== undefined) updateData.fullName = fullName;
+    if (age !== undefined) updateData.age = age;
+    if (role !== undefined) updateData.role = role;
+    if (battingStyle !== undefined) updateData.battingStyle = battingStyle;
+    if (bowlingStyle !== undefined) updateData.bowlingStyle = bowlingStyle;
+    if (medicalIssues !== undefined) updateData.medicalIssues = medicalIssues;
+
+    const updatedPlayer = await PlayerProfile.findByIdAndUpdate(
+      id,
+      updateData,
+      { new: true, runValidators: true }
+    );
+
+    if (!updatedPlayer) {
+      return res.status(404).json({
+        status: "error",
+        message: "Player not found",
+      });
+    }
+
+    return res.status(200).json({
+      status: "success",
+      data: updatedPlayer,
+      message: "Player updated successfully",
+    });
+  } catch (error) {
+    console.error("Update player error:", error);
+    return res.status(500).json({
+      status: "error",
+      message: "Failed to update player",
     });
   }
 };

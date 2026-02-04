@@ -53,7 +53,7 @@ export const searchCoaches = async (req, res) => {
 
     // Filter by minimum rating
     if (minRating) {
-      searchQuery['ratings.overall'] = { $gte: parseFloat(minRating) };
+      searchQuery['rating'] = { $gte: parseFloat(minRating) };
     }
 
     // Filter by location (you can enhance this with geocoding)
@@ -64,7 +64,7 @@ export const searchCoaches = async (req, res) => {
     // Fetch coaches
     const coaches = await CoachProfile.find(searchQuery)
       .populate('userId', 'fullName email profilePhoto')
-      .sort({ 'ratings.overall': -1 }) // Sort by rating descending
+      .sort({ 'rating': -1 }) // Sort by rating descending
       .skip(skip)
       .limit(parseInt(limit))
       .lean();
@@ -194,7 +194,7 @@ export const searchAll = async (req, res) => {
       ]
     })
       .populate('userId', 'fullName email profilePhoto')
-      .sort({ 'ratings.overall': -1 })
+      .sort({ 'rating': -1 })
       .limit(parseInt(limit))
       .lean();
 

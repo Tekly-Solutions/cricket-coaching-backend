@@ -63,6 +63,13 @@ const playerProfileSchema = new mongoose.Schema(
       // required: true,
     },
 
+    // Medical conditions or issues (e.g., "Asthma", "None", etc.)
+    medicalIssues: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+
     // Optional – can be calculated or set manually
     // Helps quickly identify who needs guardian oversight
     isSelfManaged: {

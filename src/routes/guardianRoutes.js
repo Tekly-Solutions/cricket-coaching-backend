@@ -9,6 +9,8 @@ import {
   createAndAddPlayer,      // ← NEW: create player + link
   getMyPlayers,
   getPlayerDetails,
+  removePlayer,
+  updatePlayer,
 } from "../controllers/guardianController.js";
 
 const router = express.Router();
@@ -26,5 +28,7 @@ router.post("/players", roleAuth("guardian"), createAndAddPlayer);
 
 router.get("/players", roleAuth("guardian"), getMyPlayers);
 router.get("/player/:id", roleAuth("guardian"), getPlayerDetails);
+router.put("/player/:id", roleAuth("guardian"), updatePlayer);
+router.delete("/player/:id", roleAuth("guardian"), removePlayer);
 
 export default router;
