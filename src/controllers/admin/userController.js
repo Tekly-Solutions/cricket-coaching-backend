@@ -268,11 +268,10 @@ export const getCoachById = async (req, res) => {
 
 /* Gaurdians */
 
-// controllers/admin/adminController.js
-
 /**
  * GET /api/admin/guardians
  * Admin-only: List all guardians with filters, search, pagination
+ * Includes real booking count and total spend from Booking collection
  *
  * Query params:
  *   - page: number (default 1)
@@ -304,12 +303,6 @@ export const getAllGuardians = async (req, res) => {
       ];
     }
 
-    // Status filter (if added to User or GuardianProfile later)
-    // For now, using isActive from GuardianProfile
-    if (status !== "all") {
-      query["guardianProfile.isActive"] = status === "active";
-    }
-
     const pipeline = [
       { $match: query },
 
@@ -325,9 +318,65 @@ export const getAllGuardians = async (req, res) => {
       { $unwind: { path: "$guardianProfile", preserveNullAndEmptyArrays: true } },
 
       // Optional status filter
-      ...(status !== "all" ? [{ $match: { "guardianProfile.isActive": status === "active" } }] : []),
+      ...(status !== "all" 
+        ? [{ $match: { "guardianProfile.isActive": status === "active" } }] 
+        : []
+      ),
 
-      // Project minimal fields
+      // NEW: Get all players under this guardian
+      {
+        $lookup: {
+          from: "playerprofiles",
+          localField: "guardianProfile.players",
+          foreignField: "_id",
+          as: "playerProfiles",
+        },
+      },
+
+      // NEW: Get User IDs of self-managed players (those with userId)
+      {
+        $addFields: {
+          playerUserIds: {
+            $map: {
+              input: {
+                $filter: {
+                  input: "$playerProfiles",
+                  cond: { $ne: ["$$this.userId", null] },
+                },
+              },
+              as: "player",
+              in: "$$player.userId",
+            },
+          },
+        },
+      },
+
+      // NEW: Join bookings for all players (self-managed)
+      {
+        $lookup: {
+          from: "bookings",
+          let: { playerIds: "$playerUserIds" },
+          pipeline: [
+            {
+              $match: {
+                $expr: { $in: ["$player", "$$playerIds"] },
+                status: { $in: ["pending", "confirmed", "completed"] },
+              },
+            },
+            {
+              $group: {
+                _id: null,
+                totalBookings: { $sum: 1 },
+                totalSpend: { $sum: "$pricing.total" },
+              },
+            },
+          ],
+          as: "bookingStats",
+        },
+      },
+      { $unwind: { path: "$bookingStats", preserveNullAndEmptyArrays: true } },
+
+      // Project final fields
       {
         $project: {
           id: "$_id",
@@ -337,6 +386,8 @@ export const getAllGuardians = async (req, res) => {
           address: "$guardianProfile.address",
           playersCount: { $size: { $ifNull: ["$guardianProfile.players", []] } },
           isActive: { $ifNull: ["$guardianProfile.isActive", true] },
+          totalBookings: { $ifNull: ["$bookingStats.totalBookings", 0] },
+          totalSpend: { $ifNull: ["$bookingStats.totalSpend", 0] },
           createdAt: "$createdAt",
         },
       },
@@ -358,9 +409,19 @@ export const getAllGuardians = async (req, res) => {
     // Total count
     const totalPipeline = [
       { $match: query },
-      { $lookup: { from: "guardianprofiles", localField: "_id", foreignField: "userId", as: "guardianProfile" } },
+      { 
+        $lookup: { 
+          from: "guardianprofiles", 
+          localField: "_id", 
+          foreignField: "userId", 
+          as: "guardianProfile" 
+        } 
+      },
       { $unwind: { path: "$guardianProfile", preserveNullAndEmptyArrays: true } },
-      ...(status !== "all" ? [{ $match: { "guardianProfile.isActive": status === "active" } }] : []),
+      ...(status !== "all" 
+        ? [{ $match: { "guardianProfile.isActive": status === "active" } }] 
+        : []
+      ),
       { $count: "total" },
     ];
 
@@ -389,6 +450,7 @@ export const getAllGuardians = async (req, res) => {
 /**
  * GET /api/admin/guardians/:id
  * Admin-only: Get full details of a single guardian by user ID
+ * Includes real booking count and total spend
  */
 export const getGuardianById = async (req, res) => {
   try {
@@ -419,9 +481,34 @@ export const getGuardianById = async (req, res) => {
       .populate({
         path: "players",
         model: "PlayerProfile",
-        select: "fullName age role battingStyle bowlingStyle profilePhoto isSelfManaged",
+        select: "fullName age role battingStyle bowlingStyle profilePhoto isSelfManaged userId",
       })
       .lean();
+
+    // NEW: Get player User IDs (for self-managed players)
+    const playerUserIds = guardianProfile?.players
+      ?.filter(p => p.userId)
+      .map(p => p.userId) || [];
+
+    // NEW: Aggregate bookings for all players
+    const bookingStats = await Booking.aggregate([
+      {
+        $match: {
+          player: { $in: playerUserIds },
+          status: { $in: ["pending", "confirmed", "completed"] },
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          totalBookings: { $sum: 1 },
+          totalSpend: { $sum: "$pricing.total" },
+        },
+      },
+    ]);
+
+    const totalBookings = bookingStats[0]?.totalBookings || 0;
+    const totalSpend = bookingStats[0]?.totalSpend || 0;
 
     // Combine data
     const guardianData = {
@@ -438,6 +525,10 @@ export const getGuardianById = async (req, res) => {
       players: guardianProfile?.players || [],
       playersCount: guardianProfile?.players?.length || 0,
       isActive: guardianProfile?.isActive ?? true,
+
+      // NEW: Real booking stats
+      totalBookings,
+      totalSpend,
     };
 
     return res.status(200).json({
@@ -612,7 +703,6 @@ export const getPlayerById = async (req, res) => {
     // Find PlayerProfile
     const playerProfile = await PlayerProfile.findById(id)
       .populate("userId", "fullName email phoneNumber role")
-      .populate("guardianId", "fullName email phoneNumber")
       .lean();
 
     if (!playerProfile) {
@@ -620,6 +710,23 @@ export const getPlayerById = async (req, res) => {
         success: false,
         message: "Player not found",
       });
+    }
+
+    // Get guardian User data if guardianId exists
+    let guardianData = null;
+    if (playerProfile.guardianId) {
+      const guardianUser = await User.findById(playerProfile.guardianId)
+        .select("fullName email phoneNumber")
+        .lean();
+      
+      if (guardianUser) {
+        guardianData = {
+          id: guardianUser._id,
+          name: guardianUser.fullName,
+          email: guardianUser.email,
+          phoneNumber: guardianUser.phoneNumber,
+        };
+      }
     }
 
     // Combine data
@@ -634,15 +741,8 @@ export const getPlayerById = async (req, res) => {
       bowlingStyle: playerProfile.bowlingStyle,
       profilePhoto: playerProfile.profilePhoto,
       isSelfManaged: playerProfile.isSelfManaged,
-      isMinorWithoutUser: playerProfile.isMinorWithoutUser,
-      guardian: playerProfile.guardianId
-        ? {
-            id: playerProfile.guardianId._id,
-            name: playerProfile.guardianId.fullName,
-            email: playerProfile.guardianId.email,
-            phoneNumber: playerProfile.guardianId.phoneNumber,
-          }
-        : null,
+      isMinorWithoutUser: !playerProfile.userId,
+      guardian: guardianData,
       createdAt: playerProfile.createdAt,
     };
 

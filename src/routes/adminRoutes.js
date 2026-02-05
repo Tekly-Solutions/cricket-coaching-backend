@@ -9,6 +9,8 @@ import { getAllCoaches, getAllGuardians, getAllPlayers, getCoachById, getGuardia
 import { getBookingById } from "../controllers/bookingController.js";
 import { getAllBookings, getBookingByIdAdmin, getBookingStats, getUserBookingsAdmin } from "../controllers/admin/bookingController.js";
 import { getCoachRecentSessionsAdmin, getCoachSessionsAdmin } from "../controllers/admin/sessionController.js";
+import { getGuardianBookings, getGuardianRecentBookings } from "../controllers/admin/guardianController.js";
+import { getPlayerRecentBookings } from "../controllers/admin/playerController.js";
 
 // Example protected route (add more later: users, sessions, reports, etc.)
 // import { getAdminDashboard } from "../controllers/admin/dashboardController.js"; // create later
@@ -37,11 +39,14 @@ router.get("/coaches/:id/sessions/recent", adminAuth, getCoachRecentSessionsAdmi
 // Guardians
 router.get("/guardians", adminAuth, getAllGuardians); // get all guardians with filters
 router.get("/guardians/:id", adminAuth, getGuardianById); // Get single guardian by ID
+router.get("/guardians/:id/bookings", adminAuth, getGuardianBookings);
+router.get("/guardians/:id/bookings/recent", adminAuth, getGuardianRecentBookings);
 
 
 // Players
 router.get("/players", adminAuth, getAllPlayers);
 router.get("/players/:id", adminAuth, getPlayerById);
+router.get("/players/:id/bookings/recent", adminAuth, getPlayerRecentBookings);
 
 // Bookings
 router.get("/bookings/stats", adminAuth, getBookingStats); // Booking stats for admin dashboard
