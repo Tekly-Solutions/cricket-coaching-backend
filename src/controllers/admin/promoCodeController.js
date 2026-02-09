@@ -595,11 +595,9 @@ export const getPromoCodeStats = async (req, res) => {
     // Total promo codes
     const totalPromoCodes = await PromoCode.countDocuments();
 
-    // Active promo codes
+    // Active promo codes (just check status, not dates)
     const activePromoCodes = await PromoCode.countDocuments({
       status: 'active',
-      startDate: { $lte: new Date() },
-      endDate: { $gte: new Date() },
     });
 
     // Total redemptions across all promo codes
