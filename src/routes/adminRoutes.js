@@ -11,6 +11,7 @@ import { getAllBookings, getBookingByIdAdmin, getBookingStats, getUserBookingsAd
 import { getCoachRecentSessionsAdmin, getCoachSessionsAdmin } from "../controllers/admin/sessionController.js";
 import { getGuardianBookings, getGuardianRecentBookings } from "../controllers/admin/guardianController.js";
 import { getPlayerRecentBookings } from "../controllers/admin/playerController.js";
+import { createPlan, deletePlan, getAllPlans, getSubscriptionStats, updatePlan } from "../controllers/admin/subscriptionController.js";
 
 // Example protected route (add more later: users, sessions, reports, etc.)
 // import { getAdminDashboard } from "../controllers/admin/dashboardController.js"; // create later
@@ -53,6 +54,13 @@ router.get("/bookings/stats", adminAuth, getBookingStats); // Booking stats for 
 router.get("/bookings", adminAuth, getAllBookings);                    // All bookings + filters
 router.get("/bookings/:id", adminAuth, getBookingByIdAdmin);           // Single booking details
 router.get("/bookings/user/:userId", adminAuth, getUserBookingsAdmin); // Bookings for specific user
+
+// Subscription Plans
+router.get("/subscriptions/stats", adminAuth, getSubscriptionStats);
+router.get("/subscriptions/plans", adminAuth, getAllPlans);
+router.post("/subscriptions/plans", adminAuth, createPlan);
+router.put("/subscriptions/plans/:id", adminAuth, updatePlan);
+router.delete("/subscriptions/plans/:id", adminAuth, deletePlan);
 
 
 
