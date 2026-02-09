@@ -12,6 +12,16 @@ import { getCoachRecentSessionsAdmin, getCoachSessionsAdmin } from "../controlle
 import { getGuardianBookings, getGuardianRecentBookings } from "../controllers/admin/guardianController.js";
 import { getPlayerRecentBookings } from "../controllers/admin/playerController.js";
 import { createPlan, deletePlan, getAllPlans, getSubscriptionStats, updatePlan } from "../controllers/admin/subscriptionController.js";
+import { 
+  createPromoCode, 
+  deletePromoCode, 
+  getAllPromoCodes, 
+  getPromoCodeById, 
+  getPromoCodeStats, 
+  updatePromoCode, 
+  updatePromoCodeStatus, 
+  validatePromoCode 
+} from "../controllers/admin/promoCodeController.js";
 
 // Example protected route (add more later: users, sessions, reports, etc.)
 // import { getAdminDashboard } from "../controllers/admin/dashboardController.js"; // create later
@@ -61,6 +71,16 @@ router.get("/subscriptions/plans", adminAuth, getAllPlans);
 router.post("/subscriptions/plans", adminAuth, createPlan);
 router.put("/subscriptions/plans/:id", adminAuth, updatePlan);
 router.delete("/subscriptions/plans/:id", adminAuth, deletePlan);
+
+// Promo Codes
+router.get("/promo-codes/stats", adminAuth, getPromoCodeStats);        // Get promo code statistics
+router.get("/promo-codes", adminAuth, getAllPromoCodes);               // Get all promo codes with filters
+router.get("/promo-codes/:id", adminAuth, getPromoCodeById);           // Get single promo code
+router.post("/promo-codes", adminAuth, createPromoCode);               // Create new promo code
+router.put("/promo-codes/:id", adminAuth, updatePromoCode);            // Update promo code
+router.patch("/promo-codes/:id/status", adminAuth, updatePromoCodeStatus); // Change status
+router.delete("/promo-codes/:id", adminAuth, deletePromoCode);         // Delete promo code
+router.post("/promo-codes/validate", adminAuth, validatePromoCode);    // Validate promo code
 
 
 
