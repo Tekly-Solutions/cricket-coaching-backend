@@ -16,6 +16,7 @@ import earningsRoutes from "./routes/earnings.js";
 import notificationRoutes from "./routes/notifications.js";
 import searchRoutes from "./routes/searchRoutes.js";
 import paymentRoutes from "./routes/paymentRoutes.js";
+import reviewRoutes from "./routes/reviewRoutes.js";
 
 
 const app = express();
@@ -51,6 +52,7 @@ app.use("/api/earnings", earningsRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/search", searchRoutes);
 app.use("/api/payments", paymentRoutes);
+app.use("/api/reviews", reviewRoutes);
 
 
 export default app;

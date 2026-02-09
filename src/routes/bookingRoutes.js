@@ -2,6 +2,7 @@ import express from 'express';
 const router = express.Router();
 import {
     createBooking,
+    createPrivateBooking,
     getPlayerBookings,
     getBookingById,
     cancelBooking,
@@ -17,8 +18,18 @@ const playerOrGuardianOnly = (req, res, next) => {
     next();
 };
 
+const logRequest = (req, res, next) => {
+    console.log('--- Request Debug ---');
+    console.log('Headers:', req.headers);
+    console.log('Body:', req.body);
+    console.log('User:', req.user);
+    console.log('---------------------');
+    next();
+};
+
 // Routes
 router.post('/validate-promo', hybridAuth, validatePromoCode);
+router.post('/private', hybridAuth, playerOrGuardianOnly, logRequest, createPrivateBooking);
 
 router
     .route('/')

@@ -23,7 +23,7 @@ const bookingSchema = new mongoose.Schema(
         },
         paymentMethod: {
             type: String,
-            enum: ['card', 'apple_pay', 'google_pay'],
+            enum: ['card', 'apple_pay', 'google_pay', 'test'],
             required: true,
         },
         pricing: {

@@ -18,6 +18,10 @@ export const createBooking = async (req, res) => {
         const { sessionId, occurrenceDate, paymentMethod, promoCode } = req.body;
         const playerId = req.user._id;
 
+        if (paymentMethod === 'test') {
+            console.log(`[TEST BOOKING] Player ${playerId} booking session ${sessionId}`);
+        }
+
         // Validate required fields
         if (!sessionId || !occurrenceDate || !paymentMethod) {
             return res.status(400).json({
@@ -295,35 +299,204 @@ export const cancelBooking = async (req, res) => {
 };
 
 /**
- * Validate promo code
+ * Validate a promo code
  * POST /api/bookings/validate-promo
  */
 export const validatePromoCode = async (req, res) => {
     try {
-        const { code } = req.body;
+        const { promoCode } = req.body;
 
-        if (!code) {
+        if (!promoCode) {
             return res.status(400).json({ message: 'Promo code is required' });
         }
 
-        const promo = PROMO_CODES[code.toUpperCase()];
+        const promo = PROMO_CODES[promoCode.toUpperCase()];
 
-        if (!promo) {
-            return res.status(404).json({
-                message: 'Invalid or expired promo code',
-                valid: false,
+        if (promo) {
+            return res.json({
+                valid: true,
+                discount: promo.discount,
+                type: promo.type,
+                code: promoCode.toUpperCase()
             });
         }
 
-        res.json({
-            message: 'Valid promo code',
-            valid: true,
-            discount: promo.discount,
-            type: promo.type,
-            code: code.toUpperCase(),
-        });
+        return res.status(400).json({ message: 'Invalid promo code' });
     } catch (error) {
         console.error('Validate promo error:', error);
+        res.status(500).json({ message: 'Server error', error: error.message });
+    }
+};
+
+
+
+/**
+ * Create a private 1-on-1 booking
+ * POST /api/bookings/private
+ */
+export const createPrivateBooking = async (req, res) => {
+    try {
+        const { coachId, startTime, durationMinutes = 60, paymentMethod, promoCode, playerIds } = req.body;
+        const user = req.user;
+
+        console.log(`[CreatePrivateBooking] Request from user: ${user._id} (${user.role})`);
+        console.log(`[CreatePrivateBooking] Received coachId: ${coachId}`);
+        console.log(`[CreatePrivateBooking] PlayerIds: ${playerIds}`);
+
+        // Determine players to be booked
+        let playersToBook = [];
+        if (user.role === 'guardian') {
+            if (!playerIds || !Array.isArray(playerIds) || playerIds.length === 0) {
+                return res.status(400).json({ message: 'Please select at least one player' });
+            }
+            playersToBook = playerIds;
+        } else {
+            // Player booking for themselves
+            playersToBook = [user._id];
+        }
+
+        // 1. Validate Input
+        if (!coachId || !startTime || !paymentMethod) {
+            return res.status(400).json({
+                message: 'Coach ID, start time, and payment method are required',
+            });
+        }
+
+        const start = new Date(startTime);
+        const end = new Date(start.getTime() + durationMinutes * 60000);
+
+        // 2. Fetch Coach Profile (Robust lookup)
+        const CoachProfile = mongoose.model('CoachProfile');
+        let coachProfile = await CoachProfile.findOne({ userId: coachId });
+
+        // If not found by User ID, try by Coach Profile ID
+        if (!coachProfile) {
+            if (mongoose.Types.ObjectId.isValid(coachId)) {
+                coachProfile = await CoachProfile.findById(coachId);
+            }
+        }
+
+        if (!coachProfile) {
+            console.log(`[CreatePrivateBooking] FAILURE: Coach profile not found for ID: ${coachId}`);
+            console.log(`[CreatePrivateBooking] Is Valid ObjectId: ${mongoose.Types.ObjectId.isValid(coachId)}`);
+            return res.status(404).json({ message: 'Coach profile not found' });
+        }
+
+        // IMPORTANT: Use the resolved User ID for session creation and checks
+        // as the passed 'coachId' might be the profile ID
+        const finalCoachId = coachProfile.userId;
+
+        // 3. Check Availability (Double check)
+        const conflict = await Session.findOne({
+            coach: finalCoachId,
+            status: { $in: ['published', 'draft'] },
+            'timeSlots': {
+                $elemMatch: {
+                    $or: [
+                        { startTime: { $lt: end }, endTime: { $gt: start } }
+                    ]
+                }
+            }
+        });
+
+        if (conflict) {
+            return res.status(400).json({ message: 'Selected slot is no longer available' });
+        }
+
+        // 4. Create Private Session
+        const sessionFee = coachProfile.defaultPricing?.hourlyRate || 0;
+        const adjustedFee = (sessionFee / 60) * durationMinutes;
+
+        const session = new Session({
+            coach: finalCoachId,
+            title: '1-on-1 Session',
+            description: `Private session with ${playersToBook.length > 1 ? 'Multiple Players' : 'Player'}`,
+            location: coachProfile.city || 'TBD',
+            isRecurring: false,
+            capacity: playersToBook.length,
+            pricing: {
+                amount: parseFloat(adjustedFee.toFixed(2)),
+                currency: coachProfile.defaultPricing?.currency || 'USD',
+                pricePerPerson: true,
+            },
+            timeSlots: [{
+                startTime: start,
+                endTime: end,
+                durationMinutes: durationMinutes,
+                bookedCount: playersToBook.length
+            }],
+            status: 'published',
+            createdBy: user._id,
+            assignedPlayers: playersToBook.map(pid => ({
+                player: pid,
+                status: 'confirmed',
+                joinedAt: new Date()
+            }))
+        });
+
+        await session.save();
+
+        // 5. Create Bookings (One per player)
+        const serviceFee = 2.50;
+        const tax = 0.00;
+        let discount = 0.00;
+
+        // Apply promo code if provided
+        if (promoCode) {
+            const promo = PROMO_CODES[promoCode.toUpperCase()];
+            if (promo) {
+                discount = promo.discount;
+            }
+        }
+
+        const totalPerPerson = adjustedFee + serviceFee + tax - discount;
+
+        const bookings = [];
+        for (const pid of playersToBook) {
+            const booking = new Booking({
+                player: pid,
+                session: session._id,
+                occurrenceDate: start,
+                paymentMethod,
+                pricing: {
+                    sessionFee: adjustedFee,
+                    serviceFee,
+                    tax,
+                    discount,
+                    total: totalPerPerson,
+                },
+                promoCode: promoCode?.toUpperCase(),
+                status: 'confirmed',
+            });
+            await booking.save();
+            bookings.push(booking);
+        }
+
+        // Notification (Send to Coach)
+        try {
+            await Notification.create({
+                recipient: finalCoachId,
+                sender: user._id,
+                type: 'booking_confirmed',
+                category: 'Schedule',
+                title: 'New Private Session Confirmed',
+                description: `${user.fullName} has booked a private session for ${playersToBook.length} player(s) on ${start.toLocaleDateString()}`,
+                priority: 'high',
+                relatedEntity: {
+                    entityType: 'Session',
+                    entityId: session._id,
+                },
+            });
+        } catch (e) { console.error('Notification error:', e); }
+
+        res.status(201).json({
+            message: 'Private session booked successfully',
+            bookings,
+            session
+        });
+
+    } catch (error) {
+        console.error('Create private booking error:', error);
         res.status(500).json({ message: 'Server error', error: error.message });
     }
 };

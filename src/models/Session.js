@@ -95,7 +95,7 @@ const sessionSchema = new mongoose.Schema(
     assignedPlayers: [{
       player: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: 'User',
+        ref: 'PlayerProfile',
       },
       status: {
         type: String,
