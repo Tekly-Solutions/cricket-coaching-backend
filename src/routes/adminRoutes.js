@@ -7,7 +7,7 @@ import {
 import { adminAuth } from "../middlewares/adminAuth.js";
 import { getAllCoaches, getAllGuardians, getAllPlayers, getCoachById, getGuardianById, getPlayerById } from "../controllers/admin/userController.js";
 import { getBookingById } from "../controllers/bookingController.js";
-import { getAllBookings, getBookingByIdAdmin, getBookingStats, getUserBookingsAdmin } from "../controllers/admin/bookingController.js";
+import { deleteBooking, getAllBookings, getBookingByIdAdmin, getBookingStats, getUserBookingsAdmin, updateBookingStatus } from "../controllers/admin/bookingController.js";
 import { getCoachRecentSessionsAdmin, getCoachSessionsAdmin } from "../controllers/admin/sessionController.js";
 import { getGuardianBookings, getGuardianRecentBookings } from "../controllers/admin/guardianController.js";
 import { getPlayerRecentBookings } from "../controllers/admin/playerController.js";
@@ -64,6 +64,8 @@ router.get("/bookings/stats", adminAuth, getBookingStats); // Booking stats for 
 router.get("/bookings", adminAuth, getAllBookings);                    // All bookings + filters
 router.get("/bookings/:id", adminAuth, getBookingByIdAdmin);           // Single booking details
 router.get("/bookings/user/:userId", adminAuth, getUserBookingsAdmin); // Bookings for specific user
+router.patch("/bookings/:id/status", adminAuth, updateBookingStatus);
+router.delete("/bookings/:id", adminAuth, deleteBooking);
 
 // Subscription Plans
 router.get("/subscriptions/stats", adminAuth, getSubscriptionStats);
