@@ -15,18 +15,45 @@ import bookingRoutes from "./routes/bookingRoutes.js";
 import earningsRoutes from "./routes/earnings.js";
 import notificationRoutes from "./routes/notifications.js";
 import searchRoutes from "./routes/searchRoutes.js";
+import adminRouter from "./routes/adminRoutes.js";
+import cookieParser from "cookie-parser";
 import paymentRoutes from "./routes/paymentRoutes.js";
 import reviewRoutes from "./routes/reviewRoutes.js";
 
 
 const app = express();
 
+// Enable cookie parsing (must come before routes)
+app.use(cookieParser()); // IMPORTANT for req.cookies
+
+// CORS configuration for both web and mobile apps
+const allowedOrigins = [
+  'http://localhost:5173',           // Vite dev server
+  'http://localhost:3000',           // Alternative dev port
+  // Mobile apps don't send Origin header, so we handle them separately
+];
+
 // CORS configuration for mobile apps
 // Mobile apps don't have a specific origin, so we need to allow all
 app.use(
   cors({
-    origin: '*', // Allow all origins for mobile apps
-    credentials: false, // Set to false when using origin: '*'
+    origin: function (origin, callback) {
+      // Allow requests with no origin (like mobile apps, Postman, curl)
+      if (!origin) {
+        return callback(null, true);
+      }
+      
+      // Check if the origin is in our allowed list
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+      
+      // Reject other origins
+      callback(new Error('Not allowed by CORS'));
+    },
+    credentials: true, // Allow cookies to be sent
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
   })
 );
 
@@ -54,5 +81,8 @@ app.use("/api/search", searchRoutes);
 app.use("/api/payments", paymentRoutes);
 app.use("/api/reviews", reviewRoutes);
 
+
+/* Admin routes */
+app.use("/api/admin", adminRouter);
 
 export default app;
