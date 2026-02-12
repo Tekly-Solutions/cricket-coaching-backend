@@ -79,7 +79,7 @@ app.use("/earnings", earningsRoutes);
 app.use("/notifications", notificationRoutes);
 app.use("/search", searchRoutes);
 app.use("/payments", paymentRoutes);
-app.use("/api/reviews", reviewRoutes);
+app.use("/reviews", reviewRoutes);
 
 
 /* Admin routes */
