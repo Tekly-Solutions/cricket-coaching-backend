@@ -2,11 +2,16 @@ import express from 'express';
 const router = express.Router();
 import {
     createBooking,
+    createPrivateBooking,
     getPlayerBookings,
     getBookingById,
     cancelBooking,
+
     validatePromoCode,
+    getCoachBookings,
+    updateBookingStatus,
 } from '../controllers/bookingController.js';
+import { roleAuth } from '../middlewares/roleAuth.js';
 import { hybridAuth } from '../middlewares/hybridAuth.js';
 
 // Middleware to verify player or guardian role
@@ -17,8 +22,22 @@ const playerOrGuardianOnly = (req, res, next) => {
     next();
 };
 
+const logRequest = (req, res, next) => {
+    console.log('--- Request Debug ---');
+    console.log('Headers:', req.headers);
+    console.log('Body:', req.body);
+    console.log('User:', req.user);
+    console.log('---------------------');
+    next();
+};
+
 // Routes
 router.post('/validate-promo', hybridAuth, validatePromoCode);
+router.post('/private', hybridAuth, playerOrGuardianOnly, logRequest, createPrivateBooking);
+
+// Coach Routes
+router.get('/coach', hybridAuth, roleAuth('coach'), getCoachBookings);
+router.put('/:id/status', hybridAuth, roleAuth('coach'), updateBookingStatus);
 
 router
     .route('/')
@@ -27,6 +46,6 @@ router
 
 router.route('/:id').get(hybridAuth, getBookingById);
 
-router.route('/:id/cancel').put(hybridAuth, playerOrGuardianOnly, cancelBooking);
+router.route('/:id/cancel').put(hybridAuth, cancelBooking); // Accessible by player/guardian
 
 export default router;

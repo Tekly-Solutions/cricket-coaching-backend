@@ -6,6 +6,7 @@ import {
   searchSessions,
   searchAll,
   getCoachDetails,
+  getCoachAvailability,
 } from '../controllers/searchController.js';
 
 const router = express.Router();
@@ -14,6 +15,7 @@ const router = express.Router();
 router.use(hybridAuth);
 
 // Search endpoints
+router.get('/coaches/:id/availability', getCoachAvailability);
 router.get('/coaches/:id', getCoachDetails);
 router.get('/coaches', searchCoaches);
 router.get('/sessions', searchSessions);

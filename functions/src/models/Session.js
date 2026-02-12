@@ -95,7 +95,7 @@ const sessionSchema = new mongoose.Schema(
     assignedPlayers: [{
       player: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: 'User',
+        ref: 'PlayerProfile',
       },
       status: {
         type: String,
@@ -103,6 +103,10 @@ const sessionSchema = new mongoose.Schema(
         default: 'invited',
       },
       joinedAt: { type: Date },
+      attended: {
+        type: Boolean,
+        default: false,
+      },
     }],
 
     status: {
