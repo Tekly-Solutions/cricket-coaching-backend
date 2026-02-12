@@ -8,15 +8,15 @@ import Booking from '../models/Booking.js';
  */
 export const getTotalEarnings = async (req, res) => {
   try {
-    const coachId = req.user._id;
+    const coachId = req.user.userId;
 
     const result = await Earning.getTotalEarnings(coachId, ['confirmed', 'paid']);
-    
+
     // Calculate percentage change from last period (month)
     const now = new Date();
     const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0);
-    
+
     const lastMonth = await Earning.aggregate([
       {
         $match: {
@@ -58,10 +58,10 @@ export const getTotalEarnings = async (req, res) => {
 
     const lastMonthTotal = lastMonth[0]?.total || 0;
     const currentMonthTotal = currentMonth[0]?.total || 0;
-    
+
     let percentageChange = 0;
     let changeAmount = 0;
-    
+
     if (lastMonthTotal > 0) {
       changeAmount = currentMonthTotal - lastMonthTotal;
       percentageChange = ((changeAmount / lastMonthTotal) * 100).toFixed(1);
@@ -94,7 +94,7 @@ export const getTotalEarnings = async (req, res) => {
  */
 export const getEarningsByPeriod = async (req, res) => {
   try {
-    const coachId = req.user._id;
+    const coachId = req.user.userId;
     const { type = 'monthly', startDate, endDate } = req.query;
 
     // Default date ranges if not provided
@@ -156,7 +156,7 @@ export const getEarningsByPeriod = async (req, res) => {
  */
 export const getEarningsHistory = async (req, res) => {
   try {
-    const coachId = req.user._id;
+    const coachId = req.user.userId;
     const {
       page = 1,
       limit = 20,
@@ -183,7 +183,7 @@ export const getEarningsHistory = async (req, res) => {
 
     const [earnings, total] = await Promise.all([
       Earning.find(query)
-        .populate('player', 'firstName lastName avatar')
+        .populate('player', 'fullName profilePhoto') // PlayerProfile fields
         .populate('session', 'title')
         .sort({ sessionDate: -1, createdAt: -1 })
         .skip(skip)
@@ -220,19 +220,19 @@ export const getEarningsHistory = async (req, res) => {
  */
 export const getEarningsSummary = async (req, res) => {
   try {
-    const coachId = req.user._id;
+    const coachId = req.user.userId;
     const now = new Date();
 
     // Current month
     const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    
+
     // Last month
     const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0);
 
     const [totalEarnings, currentMonthEarnings, lastMonthEarnings, recentEarnings] = await Promise.all([
       Earning.getTotalEarnings(coachId, ['confirmed', 'paid']),
-      
+
       Earning.aggregate([
         {
           $match: {
@@ -249,7 +249,7 @@ export const getEarningsSummary = async (req, res) => {
           },
         },
       ]),
-      
+
       Earning.aggregate([
         {
           $match: {
@@ -269,12 +269,12 @@ export const getEarningsSummary = async (req, res) => {
           },
         },
       ]),
-      
+
       Earning.find({
         coach: coachId,
         status: { $in: ['confirmed', 'paid', 'pending'] },
       })
-        .populate('player', 'firstName lastName avatar')
+        .populate('player', 'fullName profilePhoto') // PlayerProfile fields
         .sort({ sessionDate: -1 })
         .limit(10)
         .lean(),
@@ -333,7 +333,7 @@ export const createEarning = async (req, res) => {
     } = req.body;
 
     const earning = await Earning.create({
-      coach: req.user._id,
+      coach: req.user.userId,
       session: sessionId,
       booking: bookingId,
       player: playerId,
@@ -366,7 +366,7 @@ export const createEarning = async (req, res) => {
  */
 export const requestCashOut = async (req, res) => {
   try {
-    const coachId = req.user._id;
+    const coachId = req.user.userId;
     const { amount } = req.body;
 
     // MVP: Just return success message

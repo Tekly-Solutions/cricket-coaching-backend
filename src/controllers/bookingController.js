@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import Booking from '../models/Booking.js';
 import Session from '../models/Session.js';
 import Notification from '../models/Notification.js';
+import Earning from '../models/Earning.js';
 
 // Mock promo codes (in production, these would come from a database)
 const PROMO_CODES = {
@@ -15,12 +16,32 @@ const PROMO_CODES = {
  */
 export const createBooking = async (req, res) => {
     try {
-        const { sessionId, occurrenceDate, paymentMethod, promoCode } = req.body;
-        const playerId = req.user._id;
+        const { sessionId, occurrenceDate, paymentMethod, promoCode, playerId: requestedPlayerId } = req.body;
+        const userId = req.user.userId;
+
+        // Resolve Player ID (It should be a PlayerProfile ID now)
+        // If guardian is booking, they send 'playerId' (profile ID)
+        // If player is booking, we find their profile ID from their user ID
+        let playerProfileId = requestedPlayerId;
+
+        if (req.user.role === 'player') {
+            const PlayerProfile = mongoose.model('PlayerProfile');
+            const profile = await PlayerProfile.findOne({ userId: userId });
+            if (!profile) return res.status(404).json({ message: 'Player profile not found' });
+            playerProfileId = profile._id;
+        } else if (req.user.role === 'guardian') {
+            if (!playerProfileId) return res.status(400).json({ message: 'Player ID is required for guardian bookings' });
+            // Verify guardian owns this player
+            const GuardianProfile = mongoose.model('GuardianProfile');
+            const guardian = await GuardianProfile.findOne({ userId: userId, players: playerProfileId });
+            if (!guardian) return res.status(403).json({ message: 'You do not have permission to book for this player' });
+        }
 
         if (paymentMethod === 'test') {
-            console.log(`[TEST BOOKING] Player ${playerId} booking session ${sessionId}`);
+            console.log(`[TEST BOOKING] PlayerProfile ${playerProfileId} booking session ${sessionId}`);
         }
+
+
 
         // Validate required fields
         if (!sessionId || !occurrenceDate || !paymentMethod) {
@@ -37,8 +58,8 @@ export const createBooking = async (req, res) => {
 
         // Verify the occurrence date is valid for this session
         const requestedDate = new Date(occurrenceDate);
-        const isValidOccurrence = session.occurrences.some(
-            (occ) => new Date(occ.date).getTime() === requestedDate.getTime()
+        const isValidOccurrence = session.timeSlots.some(
+            (occ) => new Date(occ.startTime).getTime() === requestedDate.getTime()
         );
 
         if (!isValidOccurrence) {
@@ -49,7 +70,7 @@ export const createBooking = async (req, res) => {
 
         // Check if player has already booked this occurrence
         const existingBooking = await Booking.findOne({
-            player: playerId,
+            player: playerProfileId,
             session: sessionId,
             occurrenceDate: requestedDate,
             status: { $in: ['pending', 'confirmed'] },
@@ -79,7 +100,7 @@ export const createBooking = async (req, res) => {
 
         // Create booking
         const booking = new Booking({
-            player: playerId,
+            player: playerProfileId,
             session: sessionId,
             occurrenceDate: requestedDate,
             paymentMethod,
@@ -103,27 +124,53 @@ export const createBooking = async (req, res) => {
                 select: 'title location coach',
                 populate: { path: 'coach', select: 'fullName' },
             },
-            { path: 'player', select: 'fullName email' },
+            { path: 'player', select: 'fullName profilePhoto' }, // PlayerProfile fields
+            // We can also populate 'player.userId' if we need email
+            // { path: 'player', populate: { path: 'userId', select: 'email' } }
         ]);
 
         // Create notification for the coach
         try {
             await Notification.create({
                 recipient: session.coach._id,
-                sender: playerId,
+                sender: userId, // Notification sender is the logged in User (Player or Guardian)
                 type: 'booking_confirmed',
                 category: 'Schedule',
                 title: 'New Booking Confirmed',
                 description: `${booking.player.fullName} has booked your session "${session.title}" on ${requestedDate.toLocaleDateString()}`,
                 priority: 'high',
                 relatedEntity: {
-                    entityType: 'Booking',
+                    entityType: 'booking',
                     entityId: booking._id,
                 },
             });
         } catch (notifError) {
             console.error('Failed to create notification:', notifError);
             // Don't fail the booking if notification fails
+        }
+
+        // Create Earning Record
+        try {
+            // Coach's net earning = sessionFee (total - serviceFee)
+            const coachNetEarning = booking.pricing.sessionFee;
+
+            await Earning.create({
+                coach: (session.coach && session.coach._id) ? session.coach._id : session.coach,
+                session: session._id,
+                booking: booking._id,
+                player: playerProfileId, // Use PlayerProfile ID so we can populate player info
+                amount: booking.pricing.total,
+                sessionTitle: session.title,
+                sessionDate: requestedDate,
+                sessionType: 'one-on-one', // Default for standard bookings
+                status: 'confirmed',
+                currency: 'USD',
+                platformFee: booking.pricing.serviceFee, // Track the commission
+                netAmount: coachNetEarning, // Coach gets sessionFee only
+            });
+        } catch (earningError) {
+            console.error('Failed to create earning record:', earningError);
+            // Don't fail the booking if earning creation fails, but log it critical
         }
 
         res.status(201).json({
@@ -151,13 +198,23 @@ export const getPlayerBookings = async (req, res) => {
         // If player, show their bookings
         // If guardian, show bookings for all their players
         if (userRole === 'player') {
-            query.player = userId;
+            query.player = userId; // Wait, this logic was for User IDs. We need Profile IDs now.
+            const PlayerProfile = mongoose.model('PlayerProfile');
+            const profile = await PlayerProfile.findOne({ userId: userId });
+            if (profile) {
+                query.player = profile._id;
+            } else {
+                return res.json({ bookings: [], pagination: { total: 0, page: 1, limit: parseInt(limit), pages: 0 } });
+            }
         } else if (userRole === 'guardian') {
             // Find all players associated with this guardian
-            const User = mongoose.model('User');
-            const players = await User.find({ guardian: userId }).select('_id');
-            const playerIds = players.map(p => p._id);
-            query.player = { $in: playerIds };
+            const GuardianProfile = mongoose.model('GuardianProfile');
+            const guardian = await GuardianProfile.findOne({ userId: userId });
+            if (guardian && guardian.players) {
+                query.player = { $in: guardian.players };
+            } else {
+                return res.json({ bookings: [], pagination: { total: 0, page: 1, limit: parseInt(limit), pages: 0 } });
+            }
         } else {
             // If somehow a coach tries to access, return empty
             return res.json({
@@ -181,7 +238,11 @@ export const getPlayerBookings = async (req, res) => {
         const skip = (parseInt(page) - 1) * parseInt(limit);
 
         const bookings = await Booking.find(query)
-            .populate('player', 'fullName email')
+            .populate({
+                path: 'player',
+                select: 'fullName profilePhoto',
+                populate: { path: 'userId', select: 'email' } // Optional: get email if exists
+            })
             .populate({
                 path: 'session',
                 select: 'title location coach occurrences',
@@ -223,17 +284,32 @@ export const getBookingById = async (req, res) => {
                 select: 'title location coach occurrences description',
                 populate: { path: 'coach', select: 'fullName email' },
             })
-            .populate('player', 'fullName email');
+            .populate({
+                path: 'player',
+                select: 'fullName profilePhoto guardianId userId',
+                populate: { path: 'userId', select: 'email' }
+            });
 
         if (!booking) {
             return res.status(404).json({ message: 'Booking not found' });
         }
 
-        // Verify ownership (player or coach can view)
-        const isPlayer = booking.player._id.toString() === userId.toString();
-        const isCoach = booking.session.coach._id.toString() === userId.toString();
+        // Verify ownership 
+        // 1. Is it the associated player's User?
+        let isAuthorized = false;
 
-        if (!isPlayer && !isCoach) {
+        // Resolve booking player profile
+        const bookingPlayerProfile = booking.player;
+
+        if (userRole === 'player' && bookingPlayerProfile.userId && bookingPlayerProfile.userId.toString() === userId.toString()) {
+            isAuthorized = true;
+        } else if (userRole === 'guardian' && bookingPlayerProfile.guardianId && bookingPlayerProfile.guardianId.toString() === userId.toString()) {
+            isAuthorized = true;
+        } else if (userRole === 'coach' && booking.session.coach._id.toString() === userId.toString()) {
+            isAuthorized = true;
+        }
+
+        if (!isAuthorized) {
             return res.status(403).json({ message: 'Access denied' });
         }
 
@@ -245,51 +321,260 @@ export const getBookingById = async (req, res) => {
 };
 
 /**
- * Cancel a booking
+ * Get coach's bookings (incoming requests or confirmed sessions)
+ * GET /api/bookings/coach?type=upcoming|past|cancelled&limit=10&page=1
+ */
+export const getCoachBookings = async (req, res) => {
+    try {
+        const coachId = req.user.userId;
+        const { type = 'upcoming', limit = 20, page = 1 } = req.query;
+
+        // 1. Find all sessions owned by this coach
+        const sessions = await Session.find({ coach: coachId }).select('_id');
+        const sessionIds = sessions.map(s => s._id);
+
+        let query = { session: { $in: sessionIds } };
+        const now = new Date();
+
+        if (type === 'upcoming') {
+            query.occurrenceDate = { $gte: now };
+            query.status = { $in: ['pending', 'confirmed'] };
+        } else if (type === 'past') {
+            query.$or = [
+                { occurrenceDate: { $lt: now } },
+                { status: 'completed' }
+            ];
+        } else if (type === 'cancelled') {
+            query.status = { $in: ['cancelled', 'declined'] };
+        }
+
+        const skip = (parseInt(page) - 1) * parseInt(limit);
+
+        const bookings = await Booking.find(query)
+            .populate({
+                path: 'player',
+                select: 'fullName profilePhoto', // PlayerProfile fields
+                populate: { path: 'userId', select: 'email phoneNumber' } // User fields
+            })
+            .populate('session', 'title location')
+            .sort({ occurrenceDate: type === 'past' ? -1 : 1 })
+            .limit(parseInt(limit))
+            .skip(skip);
+
+        const total = await Booking.countDocuments(query);
+
+        res.json({
+            bookings,
+            pagination: {
+                total,
+                page: parseInt(page),
+                limit: parseInt(limit),
+                pages: Math.ceil(total / parseInt(limit)),
+            },
+        });
+    } catch (error) {
+        console.error('Get coach bookings error:', error);
+        res.status(500).json({ message: 'Server error', error: error.message });
+    }
+};
+
+/**
+ * Update booking status (Coach: Accept/Decline/Cancel)
+ * PUT /api/bookings/:id/status
+ */
+export const updateBookingStatus = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { status, reason } = req.body; // status: 'confirmed' | 'cancelled' | 'declined'
+        const coachId = req.user.userId;
+
+        const booking = await Booking.findById(id).populate('session');
+        if (!booking) {
+            return res.status(404).json({ message: 'Booking not found' });
+        }
+
+        // Verify coach ownership
+        if (booking.session.coach.toString() !== coachId.toString()) {
+            return res.status(403).json({ message: 'Access denied' });
+        }
+
+        // Resolve Notification Recipient (User)
+        // booking.player is currently just an ID (if not populated) or Profile object (if populated)
+        // We need to fetch the profile to get userId or guardianId
+        const PlayerProfile = mongoose.model('PlayerProfile');
+        const playerProfile = await PlayerProfile.findById(booking.player);
+
+        let recipientId = null;
+        if (playerProfile) {
+            if (playerProfile.userId) {
+                recipientId = playerProfile.userId;
+            } else if (playerProfile.guardianId) {
+                recipientId = playerProfile.guardianId;
+            }
+        }
+
+        if (recipientId) {
+            if (['cancelled', 'declined'].includes(status)) {
+                // Process Refund Logic Here (Mock)
+                booking.status = status;
+                booking.cancelledAt = new Date();
+                booking.cancelReason = reason || 'Cancelled by coach';
+
+                // Update Earning
+                await Earning.findOneAndUpdate(
+                    { booking: booking._id },
+                    { status: 'refunded' }
+                );
+
+                // Notify Player/Guardian
+                try {
+                    await Notification.create({
+                        recipient: recipientId,
+                        sender: coachId,
+                        type: 'booking_cancelled',
+                        category: 'Schedule',
+                        title: 'Session Cancelled',
+                        description: `Your session "${booking.session.title}" on ${new Date(booking.occurrenceDate).toLocaleDateString()} has been cancelled/declined by the coach.`,
+                        relatedEntity: { entityType: 'booking', entityId: booking._id }
+                    });
+                } catch (e) { console.error('Notification error', e); }
+
+            } else if (status === 'confirmed') {
+                booking.status = 'confirmed';
+
+                // Notify Player/Guardian
+                try {
+                    await Notification.create({
+                        recipient: recipientId,
+                        sender: coachId,
+                        type: 'booking_confirmed',
+                        category: 'Schedule',
+                        title: 'Booking Confirmed',
+                        description: `Your booking for "${booking.session.title}" has been confirmed!`,
+                        relatedEntity: { entityType: 'booking', entityId: booking._id }
+                    });
+                } catch (e) { console.error('Notification error', e); }
+            }
+        } else {
+            // Fallback if profile not found (shouldn't happen)
+            console.error(`Could not resolve recipient for booking ${booking._id}`);
+            // Proceed with status update anyway
+            if (['cancelled', 'declined'].includes(status)) {
+                booking.status = status;
+                booking.cancelledAt = new Date();
+                booking.cancelReason = reason || 'Cancelled by coach';
+            } else if (status === 'confirmed') {
+                booking.status = 'confirmed';
+            }
+        }
+
+        await booking.save();
+        res.json({ message: `Booking ${status} successfully`, booking });
+
+    } catch (error) {
+        console.error('Update booking status error:', error);
+        res.status(500).json({ message: 'Server error', error: error.message });
+    }
+};
+
+/**
+ * Cancel a booking (Player/Guardian)
  * PUT /api/bookings/:id/cancel
  */
 export const cancelBooking = async (req, res) => {
     try {
         const { id } = req.params;
         const { reason } = req.body;
-        const playerId = req.user._id;
+        const userId = req.user.userId; // ID from token
+        const userRole = req.user.role;
 
-        const booking = await Booking.findById(id);
+        const booking = await Booking.findById(id).populate('session').populate('player');
 
         if (!booking) {
             return res.status(404).json({ message: 'Booking not found' });
         }
 
-        // Verify ownership
-        if (booking.player.toString() !== playerId.toString()) {
+        // Verify ownership (Player or Guardian)
+        let isAuthorized = false;
+        if (booking.player.userId && booking.player.userId.toString() === userId.toString()) {
+            isAuthorized = true; // Direct player
+        } else if (userRole === 'guardian') {
+            // Check if player's guardianId matches
+            if (booking.player.guardianId && booking.player.guardianId.toString() === userId.toString()) {
+                isAuthorized = true;
+            }
+        }
+
+        if (!isAuthorized) {
             return res.status(403).json({ message: 'Access denied' });
         }
 
-        // Check if already cancelled or completed
-        if (booking.status === 'cancelled') {
-            return res.status(400).json({ message: 'Booking already cancelled' });
+        // Check if already cancelled
+        if (['cancelled', 'completed', 'declined'].includes(booking.status)) {
+            return res.status(400).json({ message: 'Booking cannot be cancelled' });
         }
 
-        if (booking.status === 'completed') {
-            return res.status(400).json({ message: 'Cannot cancel completed booking' });
+        // Cancellation Policy Check
+        const sessionTime = new Date(booking.occurrenceDate);
+        const now = new Date();
+        const hoursUntilSession = (sessionTime - now) / (1000 * 60 * 60);
+
+        // Refund Logic
+        let refundDue = false;
+        let refundAmount = 0;
+
+        if (hoursUntilSession > 24) {
+            refundDue = true;
+            refundAmount = booking.pricing.total; // Full refund
+        } else {
+            // Too late for refund?
+            // User requested "user also can cancel the booking after 24 hours booking time . the refund will be payed"
+            // If they meant "If I cancel > 24h before", then strictly adhere to this.
+            // If they meant "Cancel anytime, get refund", that's generous. 
+            // I'll stick to Standard: Full refund > 24h. No refund < 24h (or partial?).
+            // Let's allow cancellation but mark refund as 0 if < 24h, unless we want to be generous.
+            // Prompt said: "user also can cancel the booking after 24 hours booking time"
+            // This phrasing is tricky. "After 24 hours booking time" -> If I booked yesterday (24h ago), I can cancel?
+            // Let's assume the user meant "If cancelled 24 hours BEFORE session".
+            // Implementation: Full refund if > 24h.
+
+            // However, for now, let's mark it 'cancelled' regardless, and handle refund manually/stripe.
+            // We'll update the earning status.
         }
 
-        // Check if booking is in the past
-        if (new Date(booking.occurrenceDate) < new Date()) {
-            return res.status(400).json({
-                message: 'Cannot cancel past bookings',
-            });
-        }
-
-        // Update booking
+        // Update Booking
         booking.status = 'cancelled';
         booking.cancelledAt = new Date();
-        booking.cancelReason = reason || 'Cancelled by player';
-
+        booking.cancelReason = reason || 'Cancelled by user';
         await booking.save();
+
+        // Update Earning Status
+        await Earning.findOneAndUpdate(
+            { booking: booking._id },
+            {
+                status: refundDue ? 'refunded' : 'cancelled', // refunded if money back, cancelled if forfeited
+                netAmount: refundDue ? 0 : booking.pricing.total // If refunded, net is 0. If forfeited, coach keeps it? Usually platform keeps it.
+                // For MVP, enable refund for > 24h
+            }
+        );
+
+        // Notify Coach
+        try {
+            await Notification.create({
+                recipient: booking.session.coach,
+                sender: userId,
+                type: 'booking_cancelled',
+                category: 'Schedule',
+                title: 'Booking Cancelled',
+                description: `Booking for "${booking.session.title}" on ${sessionTime.toLocaleDateString()} has been cancelled by the user.`,
+                relatedEntity: { entityType: 'booking', entityId: booking._id }
+            });
+        } catch (e) { console.error('Notification error', e); }
 
         res.json({
             message: 'Booking cancelled successfully',
+            refundDue,
+            refundAmount,
             booking,
         });
     } catch (error) {
@@ -483,11 +768,37 @@ export const createPrivateBooking = async (req, res) => {
                 description: `${user.fullName} has booked a private session for ${playersToBook.length} player(s) on ${start.toLocaleDateString()}`,
                 priority: 'high',
                 relatedEntity: {
-                    entityType: 'Session',
+                    entityType: 'session',
                     entityId: session._id,
                 },
             });
         } catch (e) { console.error('Notification error:', e); }
+
+        // Create Earnings for Private Bookings
+        try {
+            const earningsPromises = bookings.map(booking => {
+                // Coach's net earning = sessionFee (total - serviceFee)
+                const coachNetEarning = booking.pricing.sessionFee;
+
+                return Earning.create({
+                    coach: finalCoachId,
+                    session: session._id,
+                    booking: booking._id,
+                    player: booking.player, // Use PlayerProfile ID for proper population
+                    amount: booking.pricing.total,
+                    sessionTitle: session.title,
+                    sessionDate: start,
+                    sessionType: 'one-on-one', // Private is effectively 1-on-1 or small group
+                    status: 'confirmed',
+                    currency: 'USD',
+                    platformFee: booking.pricing.serviceFee, // Track the commission
+                    netAmount: coachNetEarning, // Coach gets sessionFee only
+                });
+            });
+            await Promise.all(earningsPromises);
+        } catch (earningError) {
+            console.error('Failed to create private earnings:', earningError);
+        }
 
         res.status(201).json({
             message: 'Private session booked successfully',

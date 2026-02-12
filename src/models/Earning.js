@@ -30,7 +30,7 @@ const earningSchema = new mongoose.Schema(
 
     player: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'User',
+      ref: 'PlayerProfile', // Changed from User to PlayerProfile
     },
 
     // Earning details
@@ -114,11 +114,10 @@ earningSchema.index({ coach: 1, status: 1, sessionDate: -1 });
 earningSchema.index({ coach: 1, sessionDate: -1 });
 
 // Virtual for calculating net amount
-earningSchema.pre('save', function (next) {
+earningSchema.pre('save', async function () {
   if (this.isModified('amount') || this.isModified('platformFee')) {
     this.netAmount = this.amount - (this.platformFee || 0);
   }
-  next();
 });
 
 // Static method to calculate total earnings for a coach
