@@ -9,77 +9,54 @@ import Booking from "../../models/Booking.js";
  */
 export const getBookingStats = async (req, res) => {
   try {
-    // Total bookings
+    console.log("📊 Fetching booking stats...");
+    
+    // Use simple counting for reliability
     const totalBookings = await Booking.countDocuments();
+    console.log("Total bookings:", totalBookings);
 
-    // Completed bookings
-    const completedBookings = await Booking.countDocuments({
-      status: "completed",
-    });
+    const completedBookings = await Booking.countDocuments({ status: "completed" });
+    console.log("Completed bookings:", completedBookings);
 
-    // Pending bookings
-    const pendingBookings = await Booking.countDocuments({
-      status: "pending",
-    });
+    const pendingBookings = await Booking.countDocuments({ status: "pending" });
+    console.log("Pending bookings:", pendingBookings);
 
-    // Calculate total revenue (sum of all completed bookings)
-    const revenueResult = await Booking.aggregate([
-      { $match: { status: "completed" } },
-      {
-        $group: {
-          _id: null,
-          totalRevenue: { $sum: "$pricing.total" },
-        },
-      },
-    ]);
+    // Calculate total revenue from completed bookings
+    const completedBookingsWithPricing = await Booking.find({ status: "completed" }).select("pricing");
+    const totalRevenue = completedBookingsWithPricing.reduce((sum, booking) => {
+      return sum + (booking.pricing?.total || 0);
+    }, 0);
+    console.log("Total revenue:", totalRevenue);
 
-    const totalRevenue = revenueResult.length > 0 ? revenueResult[0].totalRevenue : 0;
-
-    // Calculate revenue growth (comparing this month vs last month)
+    // Calculate revenue growth
     const now = new Date();
     const startOfThisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0);
+    const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59);
 
-    const thisMonthRevenue = await Booking.aggregate([
-      {
-        $match: {
-          status: "completed",
-          createdAt: { $gte: startOfThisMonth },
-        },
-      },
-      {
-        $group: {
-          _id: null,
-          revenue: { $sum: "$pricing.total" },
-        },
-      },
-    ]);
+    const thisMonthBookings = await Booking.find({
+      status: "completed",
+      createdAt: { $gte: startOfThisMonth },
+    }).select("pricing");
 
-    const lastMonthRevenue = await Booking.aggregate([
-      {
-        $match: {
-          status: "completed",
-          createdAt: { $gte: startOfLastMonth, $lte: endOfLastMonth },
-        },
-      },
-      {
-        $group: {
-          _id: null,
-          revenue: { $sum: "$pricing.total" },
-        },
-      },
-    ]);
+    const lastMonthBookings = await Booking.find({
+      status: "completed",
+      createdAt: { $gte: startOfLastMonth, $lte: endOfLastMonth },
+    }).select("pricing");
 
-    const thisMonth = thisMonthRevenue.length > 0 ? thisMonthRevenue[0].revenue : 0;
-    const lastMonth = lastMonthRevenue.length > 0 ? lastMonthRevenue[0].revenue : 0;
+    const thisMonthRevenue = thisMonthBookings.reduce((sum, b) => sum + (b.pricing?.total || 0), 0);
+    const lastMonthRevenue = lastMonthBookings.reduce((sum, b) => sum + (b.pricing?.total || 0), 0);
 
     let revenueGrowth = 0;
-    if (lastMonth > 0) {
-      revenueGrowth = ((thisMonth - lastMonth) / lastMonth) * 100;
-    } else if (thisMonth > 0) {
+    if (lastMonthRevenue > 0) {
+      revenueGrowth = ((thisMonthRevenue - lastMonthRevenue) / lastMonthRevenue) * 100;
+    } else if (thisMonthRevenue > 0) {
       revenueGrowth = 100;
     }
+
+    console.log("This month revenue:", thisMonthRevenue);
+    console.log("Last month revenue:", lastMonthRevenue);
+    console.log("Revenue growth:", revenueGrowth);
 
     return res.status(200).json({
       success: true,
@@ -119,6 +96,8 @@ export const getAllBookings = async (req, res) => {
       sortOrder = "desc",
     } = req.query;
 
+    console.log("🔍 Fetching bookings with filters:", { status, sport, search });
+
     const skip = (Number(page) - 1) * Number(limit);
     const now = new Date();
 
@@ -151,20 +130,38 @@ export const getAllBookings = async (req, res) => {
     // Build sort object
     const sort = { [sortBy]: sortOrder === "desc" ? -1 : 1 };
 
-    // Get bookings with population
-    let bookingsQuery = Booking.find(query)
+    console.log("Query:", JSON.stringify(query));
+
+    // Get bookings with deep population
+    const bookings = await Booking.find(query)
+      .populate({
+        path: "player",
+        select: "fullName email role playerProfile guardianProfile",
+      })
       .populate({
         path: "session",
         select: "title location coach sport occurrences",
-        populate: { path: "coach", select: "fullName email coachProfile" },
+        populate: {
+          path: "coach",
+          select: "fullName email coachProfile",
+          populate: {
+            path: "coachProfile",
+            select: "bio",
+          },
+        },
       })
-      .populate("player", "fullName email")
       .sort(sort)
       .skip(skip)
       .limit(Number(limit))
       .lean();
 
-    const bookings = await bookingsQuery;
+    console.log(`Found ${bookings.length} bookings`);
+
+    // Debug first booking
+    if (bookings.length > 0) {
+      console.log("First booking player field:", JSON.stringify(bookings[0].player, null, 2));
+      console.log("First booking session field:", JSON.stringify(bookings[0].session, null, 2));
+    }
 
     // Get total count for pagination
     const total = await Booking.countDocuments(query);
@@ -197,37 +194,67 @@ export const getAllBookings = async (req, res) => {
       );
     }
 
-    // Format response
-    const formattedBookings = filteredBookings.map((booking) => ({
-      id: booking._id,
-      bookingId: booking.referenceNumber,
-      dateTime: {
-        date: new Date(booking.occurrenceDate).toLocaleDateString("en-GB", {
-          day: "numeric",
-          month: "short",
-          year: "numeric",
-        }),
-        time: new Date(booking.occurrenceDate).toLocaleTimeString("en-GB", {
-          hour: "2-digit",
-          minute: "2-digit",
-        }),
-      },
-      parent: {
-        name: booking.player?.fullName || "Unknown",
-        email: booking.player?.email || "",
-      },
-      coach: {
-        name: booking.session?.coach?.fullName || "Unknown",
-        level: booking.session?.coach?.coachProfile?.bio || "Coach",
-      },
-      sport: booking.session?.sport || "Unknown",
-      price: booking.pricing?.sessionFee || 0,
-      commission: booking.pricing?.serviceFee || 0,
-      total: booking.pricing?.total || 0,
-      status: booking.status,
-      occurrenceDate: booking.occurrenceDate,
-      createdAt: booking.createdAt,
-    }));
+    // Format response with enhanced player information
+    const formattedBookings = filteredBookings.map((booking) => {
+      const playerUser = booking.player;
+      
+      // Safely extract player information
+      let playerName = "Unknown";
+      let playerEmail = "";
+      let playerRole = "unknown";
+      let guardianManaged = false;
+
+      if (playerUser) {
+        playerName = playerUser.fullName || "Unknown";
+        playerEmail = playerUser.email || "";
+        playerRole = playerUser.role || "unknown";
+        
+        // Check if player is guardian managed
+        if (playerRole === "player" && playerUser.playerProfile) {
+          guardianManaged = !!playerUser.playerProfile.guardianId;
+        }
+      }
+
+      // Safely extract session/coach information
+      const sessionData = booking.session || {};
+      const coachData = sessionData.coach || {};
+      const coachProfileData = coachData.coachProfile || {};
+
+      return {
+        id: booking._id,
+        bookingId: booking.referenceNumber,
+        dateTime: {
+          date: new Date(booking.occurrenceDate).toLocaleDateString("en-GB", {
+            day: "numeric",
+            month: "short",
+            year: "numeric",
+          }),
+          time: new Date(booking.occurrenceDate).toLocaleTimeString("en-GB", {
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
+        },
+        player: {
+          name: playerName,
+          email: playerEmail,
+          role: playerRole,
+          guardianManaged: guardianManaged,
+        },
+        coach: {
+          name: coachData.fullName || "Unknown",
+          level: coachProfileData.bio || "Coach",
+        },
+        sport: sessionData.sport || "Unknown",
+        price: booking.pricing?.sessionFee || 0,
+        commission: booking.pricing?.serviceFee || 0,
+        total: booking.pricing?.total || 0,
+        status: booking.status,
+        occurrenceDate: booking.occurrenceDate,
+        createdAt: booking.createdAt,
+      };
+    });
+
+    console.log("Formatted first booking:", JSON.stringify(formattedBookings[0], null, 2));
 
     return res.status(200).json({
       success: true,
@@ -244,6 +271,7 @@ export const getAllBookings = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Failed to fetch bookings",
+      error: error.message,
     });
   }
 };
@@ -265,11 +293,21 @@ export const getBookingByIdAdmin = async (req, res) => {
 
     const booking = await Booking.findById(id)
       .populate({
+        path: "player",
+        select: "fullName email phone role playerProfile",
+      })
+      .populate({
         path: "session",
         select: "title location coach occurrences description sport sessionType",
-        populate: { path: "coach", select: "fullName email phone coachProfile" },
+        populate: {
+          path: "coach",
+          select: "fullName email phone coachProfile",
+          populate: {
+            path: "coachProfile",
+            select: "bio",
+          },
+        },
       })
-      .populate("player", "fullName email phone role")
       .lean();
 
     if (!booking) {
@@ -296,6 +334,7 @@ export const getBookingByIdAdmin = async (req, res) => {
         name: booking.player?.fullName,
         email: booking.player?.email,
         phone: booking.player?.phone,
+        role: booking.player?.role,
       },
       session: {
         id: booking.session?._id,
@@ -380,11 +419,17 @@ export const getUserBookingsAdmin = async (req, res) => {
 
     const bookings = await Booking.find(query)
       .populate({
+        path: "player",
+        select: "fullName email role",
+      })
+      .populate({
         path: "session",
         select: "title location coach sport",
-        populate: { path: "coach", select: "fullName" },
+        populate: {
+          path: "coach",
+          select: "fullName",
+        },
       })
-      .populate("player", "fullName email")
       .sort(sort.startsWith("-") ? { [sort.slice(1)]: -1 } : { [sort]: 1 })
       .skip(skip)
       .limit(Number(limit))
@@ -407,9 +452,10 @@ export const getUserBookingsAdmin = async (req, res) => {
           minute: "2-digit",
         }),
       },
-      parent: {
+      player: {
         name: booking.player?.fullName || "Unknown",
         email: booking.player?.email || "",
+        role: booking.player?.role || "unknown",
       },
       coach: {
         name: booking.session?.coach?.fullName || "Unknown",
