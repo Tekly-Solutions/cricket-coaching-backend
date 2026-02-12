@@ -47,6 +47,28 @@ export const getCoachDashboard = async (req, res) => {
         const totalPlayers = await getUniquePlayersCount(userId);
         const rating = await getCoachRating(userId);
 
+        // Calculate Total Earnings (from Bookings, for robustness)
+        // We fetch all sessions first to match bookings
+        const allCoachSessions = await Session.find({ coach: userId }).select('_id');
+        const allSessionIds = allCoachSessions.map(s => s._id);
+
+        const totalEarningsResult = await import('../models/Booking.js').then(m => m.default.aggregate([
+            {
+                $match: {
+                    session: { $in: allSessionIds },
+                    status: { $in: ['confirmed', 'completed'] }
+                }
+            },
+            {
+                $group: {
+                    _id: null,
+                    total: { $sum: '$pricing.total' }
+                }
+            }
+        ]));
+
+        const totalEarnings = totalEarningsResult[0]?.total || 0;
+
         // --- Today's Summary Calculations ---
 
         // 1. Today's Sessions Count
@@ -120,6 +142,7 @@ export const getCoachDashboard = async (req, res) => {
                 stats: {
                     totalSessions,
                     totalPlayers,
+                    totalEarnings,
                     rating: parseFloat(rating.toFixed(1)),
                 },
                 todaySummary: {
@@ -261,6 +284,9 @@ export const getGuardianDashboard = async (req, res) => {
             player => player._id
         ) || [];
 
+        // Map players for the response
+        const managedPlayers = guardianProfile?.players || [];
+
         // Get sessions for all managed players
         const upcomingSessions = await Session.find({
             'assignedPlayers.player': { $in: managedPlayerIds },
@@ -290,7 +316,7 @@ export const getGuardianDashboard = async (req, res) => {
                     managedPlayers: managedPlayerIds.length,
                     upcomingSessions: upcomingSessions.length,
                 },
-                managedPlayers: guardianProfile?.managedPlayers || [],
+                managedPlayers: managedPlayers,
                 upcomingSessions,
                 recentActivity,
             },

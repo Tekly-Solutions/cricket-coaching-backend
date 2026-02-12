@@ -103,6 +103,10 @@ const sessionSchema = new mongoose.Schema(
         default: 'invited',
       },
       joinedAt: { type: Date },
+      attended: {
+        type: Boolean,
+        default: false,
+      },
     }],
 
     status: {

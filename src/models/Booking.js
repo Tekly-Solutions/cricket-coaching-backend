@@ -4,7 +4,7 @@ const bookingSchema = new mongoose.Schema(
     {
         player: {
             type: mongoose.Schema.Types.ObjectId,
-            ref: 'User',
+            ref: 'PlayerProfile',
             required: true,
         },
         session: {

@@ -8,6 +8,7 @@ import {
   deleteSession,
   addPlayerToSession,
   getSessionStats,
+  updateSessionAttendance,
 } from '../controllers/sessionController.js';
 import { hybridAuth } from '../middlewares/hybridAuth.js';
 import { roleAuth } from '../middlewares/roleAuth.js';
@@ -25,7 +26,7 @@ router.use(hybridAuth);
 const coachOnly = roleAuth('coach');
 
 // Specific / static routes FIRST
-router.get('/stats',     coachOnly, getSessionStats);
+router.get('/stats', coachOnly, getSessionStats);
 
 router
   .route('/')
@@ -41,5 +42,9 @@ router
 router
   .route('/:id/players')
   .post(coachOnly, addPlayerToSession);     // only coach can add players
+
+router
+  .route('/:id/players/:playerId/attendance')
+  .put(coachOnly, updateSessionAttendance); // only coach can mark attendance
 
 export default router;
