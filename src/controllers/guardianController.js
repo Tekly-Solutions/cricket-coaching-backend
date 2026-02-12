@@ -247,7 +247,7 @@ export const addPlayerToGuardian = async (req, res) => {
  */
 export const getMyPlayers = async (req, res) => {
   try {
-    const guardianProfile = await GuardianProfile.findOne({
+    let guardianProfile = await GuardianProfile.findOne({
       userId: req.user.userId,
     })
       .populate({
@@ -258,9 +258,17 @@ export const getMyPlayers = async (req, res) => {
       .lean();
 
     if (!guardianProfile) {
-      return res.status(404).json({
-        status: "error",
-        message: "Guardian profile not found",
+      console.log(`[GetMyPlayers] Profile not found for user ${req.user.userId}. Auto-creating...`);
+      // Auto-create profile if missing (Self-healing)
+      const newProfile = await GuardianProfile.create({
+        userId: req.user.userId,
+        players: []
+      });
+
+      return res.status(200).json({
+        status: "success",
+        results: 0,
+        data: [],
       });
     }
 

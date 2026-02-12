@@ -394,28 +394,26 @@ export const deleteSession = async (req, res) => {
 
 export const addPlayerToSession = async (req, res) => {
   try {
-    const { playerId } = req.body;
+    const { playerIds } = req.body;
 
-    if (!playerId) {
+    if (!playerIds || !Array.isArray(playerIds) || playerIds.length === 0) {
       return res.status(400).json({
         status: 'error',
-        message: 'playerId is required',
+        message: 'playerIds array is required',
       });
     }
 
-    // Optional: Validate that playerId is a valid ObjectId
-    if (!mongoose.Types.ObjectId.isValid(playerId)) {
-      return res.status(400).json({
-        status: 'error',
-        message: 'Invalid playerId format',
-      });
-    }
+    // Create array of player objects to add
+    const playersToAdd = playerIds.map(id => ({
+      player: id,
+      status: 'invited'
+    }));
 
     const session = await Session.findOneAndUpdate(
       { _id: req.params.id, coach: req.user.userId },
       {
         $addToSet: {
-          assignedPlayers: { player: playerId, status: 'invited' },
+          assignedPlayers: { $each: playersToAdd },
         },
       },
       { new: true }
@@ -433,10 +431,10 @@ export const addPlayerToSession = async (req, res) => {
       data: session,
     });
   } catch (error) {
-    console.error('Add player to session error:', error);
+    console.error('Add players to session error:', error);
     return res.status(500).json({
       status: 'error',
-      message: error.message || 'Failed to add player',
+      message: error.message || 'Failed to add players',
     });
   }
 };
@@ -482,6 +480,57 @@ export const getSessionStats = async (req, res) => {
     return res.status(500).json({
       status: 'error',
       message: 'Failed to fetch session stats',
+    });
+  }
+};
+
+/**
+ * PUT /api/sessions/:id/players/:playerId/attendance
+ * Update attendance status for a player in a session
+ */
+export const updateSessionAttendance = async (req, res) => {
+  try {
+    const { id, playerId } = req.params;
+    const { attended } = req.body;
+
+    if (attended === undefined) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'attended status is required',
+      });
+    }
+
+    const session = await Session.findOneAndUpdate(
+      {
+        _id: id,
+        coach: req.user.userId,
+        'assignedPlayers.player': playerId
+      },
+      {
+        $set: {
+          'assignedPlayers.$.attended': attended
+        }
+      },
+      { new: true }
+    );
+
+    if (!session) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'Session or player not found',
+      });
+    }
+
+    return res.status(200).json({
+      status: 'success',
+      message: 'Attendance updated',
+      data: session
+    });
+  } catch (error) {
+    console.error('Update attendance error:', error);
+    return res.status(500).json({
+      status: 'error',
+      message: 'Failed to update attendance',
     });
   }
 };

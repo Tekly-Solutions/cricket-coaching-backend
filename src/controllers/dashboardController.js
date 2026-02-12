@@ -39,11 +39,81 @@ export const getCoachDashboard = async (req, res) => {
     try {
         const userId = req.user.userId;
         const now = new Date();
+        const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
 
         // Get stats
         const totalSessions = await Session.countDocuments({ coach: userId });
         const totalPlayers = await getUniquePlayersCount(userId);
         const rating = await getCoachRating(userId);
+
+        // Calculate Total Earnings (from Bookings, for robustness)
+        // We fetch all sessions first to match bookings
+        const allCoachSessions = await Session.find({ coach: userId }).select('_id');
+        const allSessionIds = allCoachSessions.map(s => s._id);
+
+        const totalEarningsResult = await import('../models/Booking.js').then(m => m.default.aggregate([
+            {
+                $match: {
+                    session: { $in: allSessionIds },
+                    status: { $in: ['confirmed', 'completed'] }
+                }
+            },
+            {
+                $group: {
+                    _id: null,
+                    total: { $sum: '$pricing.total' }
+                }
+            }
+        ]));
+
+        const totalEarnings = totalEarningsResult[0]?.total || 0;
+
+        // --- Today's Summary Calculations ---
+
+        // 1. Today's Sessions Count
+        const todaySessionsCount = await Session.countDocuments({
+            coach: userId,
+            'timeSlots.startTime': { $gte: startOfDay, $lt: endOfDay },
+            status: { $nin: ['cancelled'] }
+        });
+
+        // 2. Today's Earnings (from Bookings for today's sessions)
+        // Find sessions happening today
+        const todaySessions = await Session.find({
+            coach: userId,
+            'timeSlots.startTime': { $gte: startOfDay, $lt: endOfDay },
+            status: { $nin: ['cancelled'] }
+        }).select('_id');
+
+        const todaySessionIds = todaySessions.map(s => s._id);
+
+        const todayEarningsResult = await import('../models/Booking.js').then(m => m.default.aggregate([
+            {
+                $match: {
+                    session: { $in: todaySessionIds },
+                    status: { $in: ['confirmed', 'completed'] }
+                }
+            },
+            {
+                $group: {
+                    _id: null,
+                    total: { $sum: '$pricing.total' }
+                }
+            }
+        ]));
+
+        const todayEarnings = todayEarningsResult[0]?.total || 0;
+
+        // 3. Today's Students Count (Unique players in today's bookings)
+        const todayStudentsResult = await import('../models/Booking.js').then(m => m.default.distinct('player', {
+            session: { $in: todaySessionIds },
+            status: { $in: ['confirmed', 'completed'] }
+        }));
+
+        const todayStudentsCount = todayStudentsResult.length;
+
+        // --- End Today's Summary ---
 
         // Get upcoming sessions (next 2-3)
         const upcomingSessions = await Session.find({
@@ -53,7 +123,11 @@ export const getCoachDashboard = async (req, res) => {
         })
             .sort({ 'timeSlots.startTime': 1 })
             .limit(3)
-            .populate('assignedPlayers.player', 'fullName')
+            .populate({
+                path: 'assignedPlayers.player',
+                select: 'fullName userId',
+                populate: { path: 'userId', select: 'fullName' }
+            })
             .lean();
 
         // Get recent activity (last 5)
@@ -68,7 +142,13 @@ export const getCoachDashboard = async (req, res) => {
                 stats: {
                     totalSessions,
                     totalPlayers,
+                    totalEarnings,
                     rating: parseFloat(rating.toFixed(1)),
+                },
+                todaySummary: {
+                    sessions: todaySessionsCount,
+                    earnings: todayEarnings,
+                    students: todayStudentsCount
                 },
                 upcomingSessions,
                 recentActivity,
@@ -204,6 +284,9 @@ export const getGuardianDashboard = async (req, res) => {
             player => player._id
         ) || [];
 
+        // Map players for the response
+        const managedPlayers = guardianProfile?.players || [];
+
         // Get sessions for all managed players
         const upcomingSessions = await Session.find({
             'assignedPlayers.player': { $in: managedPlayerIds },
@@ -213,7 +296,11 @@ export const getGuardianDashboard = async (req, res) => {
             .sort({ 'timeSlots.startTime': 1 })
             .limit(5)
             .populate('coach', 'fullName')
-            .populate('assignedPlayers.player', 'fullName')
+            .populate({
+                path: 'assignedPlayers.player',
+                select: 'fullName userId',
+                populate: { path: 'userId', select: 'fullName' }
+            })
             .lean();
 
         // Get recent activity for guardian
@@ -229,7 +316,7 @@ export const getGuardianDashboard = async (req, res) => {
                     managedPlayers: managedPlayerIds.length,
                     upcomingSessions: upcomingSessions.length,
                 },
-                managedPlayers: guardianProfile?.managedPlayers || [],
+                managedPlayers: managedPlayers,
                 upcomingSessions,
                 recentActivity,
             },
