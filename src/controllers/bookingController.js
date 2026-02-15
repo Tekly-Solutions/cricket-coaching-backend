@@ -246,7 +246,14 @@ export const getPlayerBookings = async (req, res) => {
             .populate({
                 path: 'session',
                 select: 'title location coach occurrences',
-                populate: { path: 'coach', select: 'fullName' },
+                populate: {
+                    path: 'coach',
+                    select: 'role',
+                    populate: {
+                        path: 'coachProfile',
+                        select: 'fullName profilePhoto'
+                    }
+                },
             })
             .sort({ occurrenceDate: type === 'past' ? -1 : 1 })
             .limit(parseInt(limit))
@@ -333,6 +340,9 @@ export const getCoachBookings = async (req, res) => {
         const sessions = await Session.find({ coach: coachId }).select('_id');
         const sessionIds = sessions.map(s => s._id);
 
+        console.log(`[getCoachBookings] CoachId: ${coachId}, Type: ${type}`);
+        console.log(`[getCoachBookings] Found ${sessions.length} sessions for coach`);
+
         let query = { session: { $in: sessionIds } };
         const now = new Date();
 
@@ -362,6 +372,8 @@ export const getCoachBookings = async (req, res) => {
             .skip(skip);
 
         const total = await Booking.countDocuments(query);
+
+        console.log(`[getCoachBookings] Found ${bookings.length} bookings (total: ${total})`);
 
         res.json({
             bookings,

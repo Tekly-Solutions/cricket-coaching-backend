@@ -50,32 +50,59 @@ const sessionSchema = new mongoose.Schema(
       maxlength: 200,
     },
 
-    // single vs recurring
-    isRecurring: {
-      type: Boolean,
-      default: false,
-    },
+    // --- NEW FIELDS FOR WIZARD ---
 
-    // For recurring: helps frontend show pattern (not enforced by DB)
-    recurrencePattern: {
+    sessionType: {
       type: String,
-      enum: ['none', 'daily', 'weekly', 'custom'],
-      default: 'none',
+      enum: ['one-time', 'recurring', 'camp', 'tournament'],
+      default: 'one-time',
     },
 
-    // Main list of concrete occurrences
-    timeSlots: [timeSlotSchema],
+    focusAreas: [{
+      type: String, // e.g., 'Batting', 'Bowling', 'Fielding', 'Fitness'
+      trim: true,
+    }],
 
-    // Max players per slot / per occurrence
+    skillLevel: {
+      type: String,
+      enum: ['Beginner', 'Intermediate', 'Advanced', 'Professional', 'All Levels'],
+      default: 'All Levels',
+    },
+
+    ageGroups: [{
+      type: String, // e.g., 'Under 11', 'Under 13', 'Under 15', 'Open'
+      trim: true,
+    }],
+
+    // Enhanced Recurring Pattern
+    recurringPattern: {
+      frequency: {
+        type: String,
+        enum: ['daily', 'weekly', 'bi-weekly', 'monthly', 'custom'],
+      },
+      daysOfWeek: [{ // For weekly: ['monday', 'wednesday']
+        type: String,
+        enum: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'],
+      }],
+      startDate: { type: Date },
+      endDate: { type: Date },
+      totalSessions: { type: Number },
+      exceptions: [{ type: Date }], // Dates to skip
+    },
+
+    // Enhanced Capacity
     capacity: {
-      type: Number,
-      min: 1,
-      max: 50,
-      default: 18,
+      min: { type: Number, default: 1 },
+      max: { type: Number, default: 18 },
     },
 
-    // Pricing for this specific session
+    // Enhanced Pricing
     pricing: {
+      model: {
+        type: String,
+        enum: ['per-session', 'full-series'],
+        default: 'per-session',
+      },
       amount: {
         type: Number,
         min: 0,
@@ -85,11 +112,28 @@ const sessionSchema = new mongoose.Schema(
         type: String,
         default: 'USD',
       },
-      pricePerPerson: {
-        type: Boolean,
-        default: true,  // true = per person, false = per session
-      },
     },
+
+    // Enrollment & Policies
+    enrollmentSettings: {
+      autoAccept: { type: Boolean, default: true },
+      allowWaitlist: { type: Boolean, default: false },
+      sendReminders: { type: Boolean, default: true },
+      deadlineHoursBefore: { type: Number, default: 0 },
+    },
+
+    cancellationPolicy: {
+      type: String,
+      enum: ['flexible', 'moderate', 'strict'],
+      default: 'flexible',
+    },
+
+    equipmentRequired: [{
+      type: String,
+      trim: true,
+    }],
+
+    // -----------------------------
 
     // Players already assigned / invited
     assignedPlayers: [{
@@ -107,11 +151,20 @@ const sessionSchema = new mongoose.Schema(
         type: Boolean,
         default: false,
       },
+      note: {
+        type: String,
+        default: '',
+      },
     }],
+
+    sessionNotes: {
+      type: String,
+      default: '',
+    },
 
     status: {
       type: String,
-      enum: ['draft', 'published', 'cancelled', 'completed'],
+      enum: ['draft', 'published', 'in-progress', 'cancelled', 'completed'],
       default: 'draft',
     },
 
@@ -126,5 +179,7 @@ const sessionSchema = new mongoose.Schema(
 // Indexes for performance
 sessionSchema.index({ coach: 1, 'timeSlots.startTime': 1 });
 sessionSchema.index({ 'assignedPlayers.player': 1 });
+sessionSchema.index({ sessionType: 1 });
+sessionSchema.index({ status: 1 });
 
 export default mongoose.model('Session', sessionSchema);
