@@ -30,7 +30,7 @@ app.use(cookieParser()); // IMPORTANT for req.cookies
 const allowedOrigins = [
   'http://localhost:5173',           // Vite dev server
   'http://localhost:3000',           // Alternative dev port
-  'https://burl-ad60f.web.app/'
+  'https://burl-ad60f.web.app'
   // Mobile apps don't send Origin header, so we handle them separately
 ];
 
