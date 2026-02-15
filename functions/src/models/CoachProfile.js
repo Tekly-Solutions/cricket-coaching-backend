@@ -82,6 +82,34 @@ const coachProfileSchema = new mongoose.Schema(
       },
     },
 
+    // Configuration for 1-on-1 bookings
+    bookingSettings: {
+      bufferTime: {
+        type: Number,
+        default: 15, // minutes
+        min: 0,
+      },
+      minAdvanceBookingHours: {
+        type: Number,
+        default: 24, // How many hours in advance to book
+        min: 1,
+      },
+      maxAdvanceBookingDays: {
+        type: Number,
+        default: 30, // How many days in advance max
+        min: 1,
+      },
+      cancellationPolicy: {
+        type: String,
+        enum: ["flexible", "moderate", "strict"],
+        default: "flexible",
+      },
+      autoAccept: {
+        type: Boolean,
+        default: true,
+      },
+    },
+
     aboutMe: {
       type: String,
       maxlength: 1200,
@@ -197,7 +225,7 @@ const coachProfileSchema = new mongoose.Schema(
           default: undefined,
         },
       },
-      
+
       // Blocked dates (vacations, holidays)
       blockedDates: {
         type: [{
@@ -206,6 +234,22 @@ const coachProfileSchema = new mongoose.Schema(
           endDate: { type: Date, required: true },
           icon: { type: String, default: 'block' },
           color: { type: String, default: 'red' },
+          createdAt: { type: Date, default: Date.now },
+        }],
+        default: [],
+      },
+
+      // Date-specific availability overrides (takes precedence over recurring schedule)
+      dateOverrides: {
+        type: [{
+          date: { type: String, required: true }, // YYYY-MM-DD format
+          schedule: {
+            type: [{
+              start: { type: String, required: true }, // "09:00 AM"
+              end: { type: String, required: true },   // "05:00 PM"
+            }],
+            required: true,
+          },
           createdAt: { type: Date, default: Date.now },
         }],
         default: [],

@@ -9,9 +9,25 @@ import {
   updateCoachAvailability,
   addBlockedDate,
   removeBlockedDate,
+  getSessionSettings,
+  updateSessionSettings,
 } from "../controllers/coachController.js";
 
 const router = express.Router();
+
+router.get(
+  "/settings/session",
+  hybridAuth,
+  roleAuth("coach"),
+  getSessionSettings
+);
+
+router.put(
+  "/settings/session",
+  hybridAuth,
+  roleAuth("coach"),
+  updateSessionSettings
+);
 
 router.get(
   "/profile",

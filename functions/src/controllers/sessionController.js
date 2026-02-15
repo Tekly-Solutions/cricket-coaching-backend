@@ -1,3 +1,4 @@
+
 // controllers/sessionController.js
 import Session from '../models/Session.js';
 import mongoose from 'mongoose';
@@ -38,11 +39,19 @@ export const createSession = async (req, res) => {
       title,
       description,
       location,
-      capacity = 18,
+      sessionType = 'one-time',
+      focusAreas = [],
+      skillLevel = 'All Levels',
+      ageGroups = [],
+      recurringPattern,
+      capacity = { min: 1, max: 18 },
+      pricing = { model: 'per-session', amount: 0, currency: 'USD' },
+      enrollmentSettings = { autoAccept: true },
+      cancellationPolicy = 'flexible',
+      equipmentRequired = [],
       timeSlots = [],
-      explicitTimeSlots = [], // New parameter for specific slots
-      selectedDays = [],
-      isRecurring = false,
+      explicitTimeSlots = [],
+      selectedDays = [], // Legacy/Manual single dates
       participants = [],
     } = req.body;
 
@@ -50,79 +59,85 @@ export const createSession = async (req, res) => {
 
     // Basic validation
     if (!title?.trim()) {
-      return res.status(400).json({
-        status: 'error',
-        message: 'Session title is required',
-      });
+      return res.status(400).json({ status: 'error', message: 'Session title is required' });
     }
 
     let concreteSlots = [];
 
-    // CASE 1: Explicit Time Slots (New Logic)
-    // Used when frontend provides exact timestamps for every slot
+    // --- STRATEGY 1: Explicit Time Slots (Pre-calculated) ---
     if (explicitTimeSlots && explicitTimeSlots.length > 0) {
       concreteSlots = explicitTimeSlots.map((slot, index) => {
         const startTime = new Date(slot.startTime);
-        if (isNaN(startTime.getTime())) {
-          throw new Error(`Invalid start time in explicit slot ${index + 1}`);
-        }
-
+        if (isNaN(startTime.getTime())) throw new Error(`Invalid start time in slot ${index + 1}`);
         const duration = Number(slot.durationMinutes);
-        if (!Number.isInteger(duration) || duration < 15 || duration > 240) {
-          throw new Error(`Duration must be between 15 and 240 minutes in explicit slot ${index + 1}`);
+        if (!Number.isInteger(duration) || duration < 15 || duration > 480) { // Increased max for camps
+          throw new Error(`Duration valid range 15-480 min in slot ${index + 1}`);
         }
-
         const endTime = new Date(startTime);
         endTime.setMinutes(startTime.getMinutes() + duration);
-
-        return {
-          startTime,
-          endTime,
-          durationMinutes: duration,
-          bookedCount: 0
-        };
+        return { startTime, endTime, durationMinutes: duration, bookedCount: 0 };
       });
     }
-    // CASE 2: Template-based Generation (Old Logic)
-    // Used when frontend provides days + template slots (Cartesian product)
-    else {
-      if (!selectedDays?.length) {
-        return res.status(400).json({
-          status: 'error',
-          message: 'At least one date must be selected',
-        });
+    // --- STRATEGY 2: Recurring Pattern Generation (New Wizard Logic) ---
+    else if (sessionType === 'recurring' && recurringPattern?.startDate && recurringPattern?.endDate) {
+      if (!timeSlots?.length) {
+        return res.status(400).json({ status: 'error', message: 'Time template required for recurring sessions' });
       }
 
+      const start = new Date(recurringPattern.startDate);
+      const end = new Date(recurringPattern.endDate);
+      const days = (recurringPattern.daysOfWeek || []).map(d => d.toLowerCase());
+      const exceptions = (recurringPattern.exceptions || []).map(d => new Date(d).toDateString());
+
+      // Map day names to 0-6
+      const dayMap = { 'sunday': 0, 'monday': 1, 'tuesday': 2, 'wednesday': 3, 'thursday': 4, 'friday': 5, 'saturday': 6 };
+      const targetDays = days.map(d => dayMap[d]).filter(d => d !== undefined);
+
+      const current = new Date(start);
+
+      while (current <= end) {
+        if (targetDays.includes(current.getDay())) {
+          // Check exception
+          if (!exceptions.includes(current.toDateString())) {
+            // Determine time from template
+            // Assuming timeSlots[0] contains the daily schedule time
+            // We'll iterate all template slots for this day
+            timeSlots.forEach(template => {
+              const slotStart = new Date(current);
+              slotStart.setHours(template.startTime.hour, template.startTime.minute, 0, 0);
+
+              const duration = Number(template.durationMinutes);
+              const slotEnd = new Date(slotStart);
+              slotEnd.setMinutes(slotStart.getMinutes() + duration);
+
+              concreteSlots.push({
+                startTime: slotStart,
+                endTime: slotEnd,
+                durationMinutes: duration,
+                bookedCount: 0
+              });
+            });
+          }
+        }
+        current.setDate(current.getDate() + 1);
+      }
+    }
+    // --- STRATEGY 3: Manual Day Selection (Legacy) ---
+    else {
+      if (!selectedDays?.length) {
+        return res.status(400).json({ status: 'error', message: 'At least one date must be selected' });
+      }
       if (!timeSlots?.length) {
-        return res.status(400).json({
-          status: 'error',
-          message: 'At least one time slot is required',
-        });
+        return res.status(400).json({ status: 'error', message: 'At least one time slot is required' });
       }
 
       // Validate and normalize timeSlots
       const formattedTimeSlots = timeSlots.map((s, index) => {
-        if (
-          !s.startTime ||
-          typeof s.startTime.hour !== 'number' ||
-          typeof s.startTime.minute !== 'number'
-        ) {
+        if (!s.startTime || typeof s.startTime.hour !== 'number') {
           throw new Error(`Invalid start time format in slot ${index + 1}`);
         }
-        if (
-          !Number.isInteger(s.durationMinutes) ||
-          s.durationMinutes < 15 ||
-          s.durationMinutes > 240
-        ) {
-          throw new Error(
-            `Duration must be between 15 and 240 minutes in slot ${index + 1}`
-          );
-        }
         return {
-          startTime: {
-            hour: Number(s.startTime.hour),
-            minute: Number(s.startTime.minute || 0),
-          },
+          startTime: { hour: Number(s.startTime.hour), minute: Number(s.startTime.minute || 0) },
           durationMinutes: Number(s.durationMinutes),
         };
       });
@@ -170,9 +185,20 @@ export const createSession = async (req, res) => {
       title: title.trim(),
       description: description?.trim() || '',
       location: location?.trim() || '',
-      capacity: Number(capacity),
-      isRecurring,
-      recurrencePattern: isRecurring ? 'custom' : 'none',
+      // New Fields
+      sessionType,
+      focusAreas,
+      skillLevel,
+      ageGroups,
+      recurringPattern,
+      capacity: typeof capacity === 'object' ? capacity : { max: Number(capacity), min: 1 },
+      pricing,
+      enrollmentSettings,
+      cancellationPolicy,
+      equipmentRequired,
+      // Existing / Backward Compatibility
+      isRecurring: sessionType === 'recurring',
+      recurrencePattern: sessionType === 'recurring' ? 'custom' : 'none',
       timeSlots: concreteSlots,
       assignedPlayers: participants.map((playerId) => ({
         player: playerId,
@@ -296,7 +322,14 @@ export const getSessionById = async (req, res) => {
   try {
     const session = await Session.findById(req.params.id)
       .populate('assignedPlayers.player', 'fullName profilePhoto email')
-      .populate('coach', 'fullName profilePhoto')
+      .populate({
+        path: 'coach',
+        select: 'role',
+        populate: {
+          path: 'coachProfile',
+          select: 'fullName profilePhoto'
+        }
+      })
       .populate('createdBy', 'fullName profilePhoto email')
       .lean();
 
