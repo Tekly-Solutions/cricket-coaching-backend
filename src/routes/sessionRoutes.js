@@ -9,6 +9,9 @@ import {
   addPlayerToSession,
   getSessionStats,
   updateSessionAttendance,
+  // Add when backend controller is updated:
+  // startSession,
+  // completeSession,
 } from '../controllers/sessionController.js';
 import { hybridAuth } from '../middlewares/hybridAuth.js';
 import { roleAuth } from '../middlewares/roleAuth.js';
@@ -46,5 +49,10 @@ router
 router
   .route('/:id/players/:playerId/attendance')
   .put(coachOnly, updateSessionAttendance); // only coach can mark attendance
+
+// Session lifecycle routes
+// Uncomment when controller methods are added:
+// router.post('/:id/start', coachOnly, startSession);
+// router.post('/:id/complete', coachOnly, completeSession);
 
 export default router;
