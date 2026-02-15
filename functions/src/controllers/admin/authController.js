@@ -59,6 +59,8 @@ export const adminLogin = async (req, res) => {
       role: admin.role,
     });
 
+    const cookieOptions = getCookieOptions();
+
     // Set HTTP-only cookie using shared config
     res.cookie("adminToken", accessToken, cookieOptions.adminToken);
 
