@@ -22,6 +22,7 @@ import {
   updatePromoCodeStatus, 
   validatePromoCode 
 } from "../controllers/admin/promoCodeController.js";
+import { getDashboardOverview } from "../controllers/admin/dashboardController.js";
 
 // Example protected route (add more later: users, sessions, reports, etc.)
 // import { getAdminDashboard } from "../controllers/admin/dashboardController.js"; // create later
@@ -83,6 +84,9 @@ router.put("/promo-codes/:id", adminAuth, updatePromoCode);            // Update
 router.patch("/promo-codes/:id/status", adminAuth, updatePromoCodeStatus); // Change status
 router.delete("/promo-codes/:id", adminAuth, deletePromoCode);         // Delete promo code
 router.post("/promo-codes/validate", adminAuth, validatePromoCode);    // Validate promo code
+
+// Dashboard overview
+router.get("/dashboard/overview", adminAuth, getDashboardOverview); // Admin dashboard overview stats
 
 
 
