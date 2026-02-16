@@ -1,15 +1,16 @@
-
 // controllers/sessionController.js
 import Session from '../models/Session.js';
 import mongoose from 'mongoose';
 
 // Helper function to generate concrete time slots
 function generateTimeSlots(selectedDates, timeSlotsTemplate) {
+  console.log('generateTimeSlots called with:', JSON.stringify({ selectedDates, timeSlotsTemplate }));
   const occurrences = [];
 
   selectedDates.forEach((dateStr) => {
     const day = new Date(dateStr);
     if (isNaN(day.getTime())) {
+      console.error(`Invalid date format: ${dateStr}`);
       throw new Error(`Invalid date format: ${dateStr}`);
     }
 
@@ -20,6 +21,8 @@ function generateTimeSlots(selectedDates, timeSlotsTemplate) {
       const end = new Date(start);
       end.setMinutes(end.getMinutes() + slot.durationMinutes);
 
+      console.log(`Generated slot: ${start.toISOString()} - ${end.toISOString()}`);
+
       occurrences.push({
         startTime: start,
         endTime: end,
@@ -29,6 +32,7 @@ function generateTimeSlots(selectedDates, timeSlotsTemplate) {
     });
   });
 
+  console.log(`generateTimeSlots returning ${occurrences.length} slots`);
   return occurrences;
 }
 
@@ -61,6 +65,8 @@ export const createSession = async (req, res) => {
     if (!title?.trim()) {
       return res.status(400).json({ status: 'error', message: 'Session title is required' });
     }
+
+    console.log('Creates session raw body:', JSON.stringify(req.body, null, 2));
 
     let concreteSlots = [];
 
@@ -145,6 +151,8 @@ export const createSession = async (req, res) => {
       concreteSlots = generateTimeSlots(selectedDays, formattedTimeSlots);
     }
 
+    console.log('Generated concreteSlots:', JSON.stringify(concreteSlots, null, 2));
+
     // Check for session conflicts (overlapping time slots)
     for (const slot of concreteSlots) {
       const conflictingSessions = await Session.find({
@@ -204,7 +212,7 @@ export const createSession = async (req, res) => {
         player: playerId,
         status: 'invited',
       })),
-      status: 'draft',
+      status: req.body.status || 'published',
     });
 
     return res.status(201).json({

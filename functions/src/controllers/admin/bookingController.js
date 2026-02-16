@@ -6,41 +6,43 @@ import Booking from "../../models/Booking.js";
 /**
  * GET /api/admin/bookings/stats
  * Admin-only: Get booking statistics for the admin dashboard
+ * MVP rule: confirmed = completed
  */
 export const getBookingStats = async (req, res) => {
   try {
     console.log("📊 Fetching booking stats...");
-    
-    // Use simple counting for reliability
-    const totalBookings = await Booking.countDocuments();
-    console.log("Total bookings:", totalBookings);
 
-    const completedBookings = await Booking.countDocuments({ status: "completed" });
-    console.log("Completed bookings:", completedBookings);
+    const totalBookings = await Booking.countDocuments();
+
+    // ✅ MVP: confirmed is considered completed
+    const completedBookings = await Booking.countDocuments({
+      status: { $in: ["completed", "confirmed"] },
+    });
 
     const pendingBookings = await Booking.countDocuments({ status: "pending" });
-    console.log("Pending bookings:", pendingBookings);
 
-    // Calculate total revenue from completed bookings
-    const completedBookingsWithPricing = await Booking.find({ status: "completed" }).select("pricing");
-    const totalRevenue = completedBookingsWithPricing.reduce((sum, booking) => {
+    // ✅ Revenue from "done" bookings (completed + confirmed)
+    const doneBookingsWithPricing = await Booking.find({
+      status: { $in: ["completed", "confirmed"] },
+    }).select("pricing");
+
+    const totalRevenue = doneBookingsWithPricing.reduce((sum, booking) => {
       return sum + (booking.pricing?.total || 0);
     }, 0);
-    console.log("Total revenue:", totalRevenue);
 
-    // Calculate revenue growth
+    // Revenue growth month-over-month (also using done bookings)
     const now = new Date();
     const startOfThisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59);
 
     const thisMonthBookings = await Booking.find({
-      status: "completed",
+      status: { $in: ["completed", "confirmed"] },
       createdAt: { $gte: startOfThisMonth },
     }).select("pricing");
 
     const lastMonthBookings = await Booking.find({
-      status: "completed",
+      status: { $in: ["completed", "confirmed"] },
       createdAt: { $gte: startOfLastMonth, $lte: endOfLastMonth },
     }).select("pricing");
 
@@ -48,15 +50,8 @@ export const getBookingStats = async (req, res) => {
     const lastMonthRevenue = lastMonthBookings.reduce((sum, b) => sum + (b.pricing?.total || 0), 0);
 
     let revenueGrowth = 0;
-    if (lastMonthRevenue > 0) {
-      revenueGrowth = ((thisMonthRevenue - lastMonthRevenue) / lastMonthRevenue) * 100;
-    } else if (thisMonthRevenue > 0) {
-      revenueGrowth = 100;
-    }
-
-    console.log("This month revenue:", thisMonthRevenue);
-    console.log("Last month revenue:", lastMonthRevenue);
-    console.log("Revenue growth:", revenueGrowth);
+    if (lastMonthRevenue > 0) revenueGrowth = ((thisMonthRevenue - lastMonthRevenue) / lastMonthRevenue) * 100;
+    else if (thisMonthRevenue > 0) revenueGrowth = 100;
 
     return res.status(200).json({
       success: true,
@@ -73,13 +68,14 @@ export const getBookingStats = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Failed to fetch booking statistics",
+      error: error.message,
     });
   }
 };
 
 /**
  * GET /api/admin/bookings
- * Admin-only: Get all bookings with advanced filters & pagination
+ * Admin-only: Get all bookings with filters & pagination
  */
 export const getAllBookings = async (req, res) => {
   try {
@@ -96,12 +92,9 @@ export const getAllBookings = async (req, res) => {
       sortOrder = "desc",
     } = req.query;
 
-    console.log("🔍 Fetching bookings with filters:", { status, sport, search });
-
     const skip = (Number(page) - 1) * Number(limit);
     const now = new Date();
 
-    // Build base query
     const query = {};
 
     // Status filter
@@ -109,7 +102,7 @@ export const getAllBookings = async (req, res) => {
       query.status = status;
     }
 
-    // Type filter (upcoming/past)
+    // Type filter
     if (type === "upcoming") {
       query.occurrenceDate = { $gte: now };
       query.status = { $in: ["pending", "confirmed"] };
@@ -127,16 +120,19 @@ export const getAllBookings = async (req, res) => {
       if (endDate) query.occurrenceDate.$lte = new Date(endDate);
     }
 
-    // Build sort object
     const sort = { [sortBy]: sortOrder === "desc" ? -1 : 1 };
 
-    console.log("Query:", JSON.stringify(query));
-
-    // Get bookings with deep population
+    // ✅ IMPORTANT FIX:
+    // Booking.player is a PlayerProfile in your detail endpoint.
+    // So the list endpoint must populate exactly the same way.
     const bookings = await Booking.find(query)
       .populate({
-        path: "player",
-        select: "fullName email role playerProfile guardianProfile",
+        path: "player", // PlayerProfile
+        select: "fullName profilePhoto guardianId userId", // fields on PlayerProfile
+        populate: {
+          path: "userId", // User
+          select: "fullName email phoneNumber role",
+        },
       })
       .populate({
         path: "session",
@@ -155,28 +151,21 @@ export const getAllBookings = async (req, res) => {
       .limit(Number(limit))
       .lean();
 
-    console.log(`Found ${bookings.length} bookings`);
-
-    // Debug first booking
-    if (bookings.length > 0) {
-      console.log("First booking player field:", JSON.stringify(bookings[0].player, null, 2));
-      console.log("First booking session field:", JSON.stringify(bookings[0].session, null, 2));
-    }
-
-    // Get total count for pagination
     const total = await Booking.countDocuments(query);
 
-    // Apply search and sport filters after population
+    // Apply search after population
     let filteredBookings = bookings;
 
-    // Search filter (applied after population)
     if (search && search.trim()) {
       const searchLower = search.toLowerCase().trim();
       filteredBookings = filteredBookings.filter((booking) => {
-        const playerName = booking.player?.fullName?.toLowerCase() || "";
-        const playerEmail = booking.player?.email?.toLowerCase() || "";
-        const coachName = booking.session?.coach?.fullName?.toLowerCase() || "";
-        const bookingRef = booking.referenceNumber?.toLowerCase() || "";
+        const playerProfile = booking.player || null;
+        const playerUser = playerProfile?.userId || null;
+
+        const playerName = (playerUser?.fullName || playerProfile?.fullName || "").toLowerCase();
+        const playerEmail = (playerUser?.email || "").toLowerCase();
+        const coachName = (booking.session?.coach?.fullName || "").toLowerCase();
+        const bookingRef = (booking.referenceNumber || "").toLowerCase();
 
         return (
           playerName.includes(searchLower) ||
@@ -187,35 +176,23 @@ export const getAllBookings = async (req, res) => {
       });
     }
 
-    // Sport filter (applied after population)
+    // Sport filter
     if (sport && sport !== "all") {
-      filteredBookings = filteredBookings.filter(
-        (booking) => booking.session?.sport === sport
-      );
+      filteredBookings = filteredBookings.filter((booking) => booking.session?.sport === sport);
     }
 
-    // Format response with enhanced player information
     const formattedBookings = filteredBookings.map((booking) => {
-      const playerUser = booking.player;
-      
-      // Safely extract player information
-      let playerName = "Unknown";
-      let playerEmail = "";
-      let playerRole = "unknown";
-      let guardianManaged = false;
+      const playerProfile = booking.player || null;
+      const playerUser = playerProfile?.userId || null;
 
-      if (playerUser) {
-        playerName = playerUser.fullName || "Unknown";
-        playerEmail = playerUser.email || "";
-        playerRole = playerUser.role || "unknown";
-        
-        // Check if player is guardian managed
-        if (playerRole === "player" && playerUser.playerProfile) {
-          guardianManaged = !!playerUser.playerProfile.guardianId;
-        }
-      }
+      const playerName = playerUser?.fullName || playerProfile?.fullName || "Unknown";
+      const playerEmail = playerUser?.email || "";
+      const playerPhone = playerUser?.phoneNumber || "";
+      const playerRole = playerUser?.role || "player";
 
-      // Safely extract session/coach information
+      // guardian managed?
+      const guardianManaged = !!playerProfile?.guardianId;
+
       const sessionData = booking.session || {};
       const coachData = sessionData.coach || {};
       const coachProfileData = coachData.coachProfile || {};
@@ -237,8 +214,10 @@ export const getAllBookings = async (req, res) => {
         player: {
           name: playerName,
           email: playerEmail,
+          phone: playerPhone,
           role: playerRole,
-          guardianManaged: guardianManaged,
+          guardianManaged,
+          profilePhoto: playerProfile?.profilePhoto || null,
         },
         coach: {
           name: coachData.fullName || "Unknown",
@@ -253,8 +232,6 @@ export const getAllBookings = async (req, res) => {
         createdAt: booking.createdAt,
       };
     });
-
-    console.log("Formatted first booking:", JSON.stringify(formattedBookings[0], null, 2));
 
     return res.status(200).json({
       success: true,
@@ -278,46 +255,48 @@ export const getAllBookings = async (req, res) => {
 
 /**
  * GET /api/admin/bookings/:id
- * Admin-only: Get full details of a single booking
+ * (keep your existing working one)
  */
 export const getBookingByIdAdmin = async (req, res) => {
   try {
     const { id } = req.params;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid booking ID",
-      });
+      return res.status(400).json({ success: false, message: "Invalid booking ID" });
     }
 
     const booking = await Booking.findById(id)
       .populate({
         path: "player",
-        select: "fullName email phone role playerProfile",
+        select: "fullName profilePhoto guardianId userId",
+        populate: { path: "userId", select: "fullName email phoneNumber role" },
       })
       .populate({
         path: "session",
-        select: "title location coach occurrences description sport sessionType",
+        select: "title location coach description sport sessionType timeSlots",
         populate: {
           path: "coach",
-          select: "fullName email phone coachProfile",
-          populate: {
-            path: "coachProfile",
-            select: "bio",
-          },
+          select: "fullName email phoneNumber coachProfile",
+          populate: { path: "coachProfile", select: "aboutMe bio rating profilePhoto" },
         },
       })
       .lean();
 
     if (!booking) {
-      return res.status(404).json({
-        success: false,
-        message: "Booking not found",
-      });
+      return res.status(404).json({ success: false, message: "Booking not found" });
     }
 
-    // Format response
+    const playerProfile = booking.player || null;
+    const playerUser = playerProfile?.userId || null;
+
+    const playerName = playerUser?.fullName || playerProfile?.fullName || "Unknown";
+    const playerEmail = playerUser?.email || "";
+    const playerPhone = playerUser?.phoneNumber || "";
+    const playerRole = playerUser?.role || "player";
+
+    const coachUser = booking.session?.coach || null;
+    const coachProfile = coachUser?.coachProfile || null;
+
     const formattedBooking = {
       id: booking._id,
       bookingId: booking.referenceNumber,
@@ -330,38 +309,42 @@ export const getBookingByIdAdmin = async (req, res) => {
       cancelReason: booking.cancelReason,
       pricing: booking.pricing,
       player: {
-        id: booking.player?._id,
-        name: booking.player?.fullName,
-        email: booking.player?.email,
-        phone: booking.player?.phone,
-        role: booking.player?.role,
+        id: playerProfile?._id || null,
+        name: playerName,
+        email: playerEmail,
+        phone: playerPhone,
+        role: playerRole,
+        guardianId: playerProfile?.guardianId || null,
+        profilePhoto: playerProfile?.profilePhoto || null,
       },
       session: {
-        id: booking.session?._id,
-        title: booking.session?.title,
-        description: booking.session?.description,
-        sport: booking.session?.sport,
-        location: booking.session?.location,
-        sessionType: booking.session?.sessionType,
+        id: booking.session?._id || null,
+        title: booking.session?.title || "",
+        description: booking.session?.description || "",
+        sport: booking.session?.sport || "",
+        location: booking.session?.location || "",
+        sessionType: booking.session?.sessionType || "",
+        timeSlots: booking.session?.timeSlots || [],
       },
       coach: {
-        id: booking.session?.coach?._id,
-        name: booking.session?.coach?.fullName,
-        email: booking.session?.coach?.email,
-        phone: booking.session?.coach?.phone,
-        bio: booking.session?.coach?.coachProfile?.bio,
+        id: coachUser?._id || null,
+        name: coachUser?.fullName || "Unknown",
+        email: coachUser?.email || "",
+        phone: coachUser?.phoneNumber || "",
+        aboutMe: coachProfile?.aboutMe || coachProfile?.bio || "",
+        rating: coachProfile?.rating || 0,
+        profilePhoto: coachProfile?.profilePhoto || null,
+        reviews: 0,
       },
     };
 
-    return res.status(200).json({
-      success: true,
-      data: formattedBooking,
-    });
+    return res.status(200).json({ success: true, data: formattedBooking });
   } catch (error) {
     console.error("Admin get booking by ID error:", error);
     return res.status(500).json({
       success: false,
       message: "Failed to fetch booking details",
+      error: error.message,
     });
   }
 };

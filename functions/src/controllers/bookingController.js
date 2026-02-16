@@ -1,3 +1,4 @@
+
 import mongoose from 'mongoose';
 import Booking from '../models/Booking.js';
 import Session from '../models/Session.js';
@@ -112,7 +113,8 @@ export const createBooking = async (req, res) => {
                 total,
             },
             promoCode: promoCode?.toUpperCase(),
-            status: 'confirmed',
+            // Check auto-accept setting
+            status: session.enrollmentSettings?.autoAccept ? 'confirmed' : 'pending',
         });
 
         await booking.save();
@@ -143,6 +145,17 @@ export const createBooking = async (req, res) => {
                     entityType: 'booking',
                     entityId: booking._id,
                 },
+            });
+
+            // Update Session Participants
+            await Session.findByIdAndUpdate(sessionId, {
+                $addToSet: {
+                    assignedPlayers: {
+                        player: playerProfileId,
+                        status: booking.status,
+                        joinedAt: new Date(),
+                    }
+                }
             });
         } catch (notifError) {
             console.error('Failed to create notification:', notifError);
@@ -478,6 +491,17 @@ export const updateBookingStatus = async (req, res) => {
             } else if (status === 'confirmed') {
                 booking.status = 'confirmed';
             }
+
+            // Sync with Session Participants
+            await Session.findOneAndUpdate(
+                {
+                    _id: booking.session._id,
+                    'assignedPlayers.player': booking.player
+                },
+                {
+                    $set: { 'assignedPlayers.$.status': booking.status }
+                }
+            );
         }
 
         await booking.save();
@@ -564,9 +588,19 @@ export const cancelBooking = async (req, res) => {
         await Earning.findOneAndUpdate(
             { booking: booking._id },
             {
-                status: refundDue ? 'refunded' : 'cancelled', // refunded if money back, cancelled if forfeited
-                netAmount: refundDue ? 0 : booking.pricing.total // If refunded, net is 0. If forfeited, coach keeps it? Usually platform keeps it.
-                // For MVP, enable refund for > 24h
+                status: refundDue ? 'refunded' : 'cancelled',
+                netAmount: refundDue ? 0 : booking.pricing.total
+            }
+        );
+
+        // Sync with Session Participants
+        await Session.findOneAndUpdate(
+            {
+                _id: booking.session._id,
+                'assignedPlayers.player': booking.player
+            },
+            {
+                $set: { 'assignedPlayers.$.status': 'cancelled' }
             }
         );
 
