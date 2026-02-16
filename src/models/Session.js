@@ -133,6 +133,8 @@ const sessionSchema = new mongoose.Schema(
       trim: true,
     }],
 
+    timeSlots: [timeSlotSchema],
+
     // -----------------------------
 
     // Players already assigned / invited
@@ -143,7 +145,7 @@ const sessionSchema = new mongoose.Schema(
       },
       status: {
         type: String,
-        enum: ['invited', 'confirmed', 'declined', 'waitlisted'],
+        enum: ['invited', 'confirmed', 'declined', 'waitlisted', 'pending'],
         default: 'invited',
       },
       joinedAt: { type: Date },
