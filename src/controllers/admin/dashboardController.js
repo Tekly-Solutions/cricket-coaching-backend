@@ -23,12 +23,7 @@ export const getDashboardOverview = async (req, res) => {
     // ---------- Total revenue (completed-like only) ----------
     const totalRevenueAgg = await Booking.aggregate([
       { $match: { status: { $in: COMPLETED_LIKE } } },
-      {
-        $group: {
-          _id: null,
-          total: { $sum: { $ifNull: ["$pricing.total", 0] } },
-        },
-      },
+      { $group: { _id: null, total: { $sum: { $ifNull: ["$pricing.total", 0] } } } },
     ]);
     const totalRevenue = Math.round(totalRevenueAgg?.[0]?.total || 0);
 
@@ -40,12 +35,7 @@ export const getDashboardOverview = async (req, res) => {
 
     const [thisMonthAgg, lastMonthAgg] = await Promise.all([
       Booking.aggregate([
-        {
-          $match: {
-            status: { $in: COMPLETED_LIKE },
-            createdAt: { $gte: startOfThisMonth },
-          },
-        },
+        { $match: { status: { $in: COMPLETED_LIKE }, createdAt: { $gte: startOfThisMonth } } },
         { $group: { _id: null, total: { $sum: { $ifNull: ["$pricing.total", 0] } } } },
       ]),
       Booking.aggregate([
@@ -63,11 +53,8 @@ export const getDashboardOverview = async (req, res) => {
     const lastMonthRevenue = lastMonthAgg?.[0]?.total || 0;
 
     let revenueGrowth = 0;
-    if (lastMonthRevenue > 0) {
-      revenueGrowth = ((thisMonthRevenue - lastMonthRevenue) / lastMonthRevenue) * 100;
-    } else if (thisMonthRevenue > 0) {
-      revenueGrowth = 100;
-    }
+    if (lastMonthRevenue > 0) revenueGrowth = ((thisMonthRevenue - lastMonthRevenue) / lastMonthRevenue) * 100;
+    else if (thisMonthRevenue > 0) revenueGrowth = 100;
     revenueGrowth = parseFloat(revenueGrowth.toFixed(1));
 
     // ---------- Active counts ----------
@@ -81,20 +68,14 @@ export const getDashboardOverview = async (req, res) => {
       .sort({ createdAt: -1 })
       .limit(8)
       .populate({
-        path: "player", // PlayerProfile
+        path: "player",
         select: "fullName email userId profilePhoto guardianId",
-        populate: {
-          path: "userId", // User
-          select: "fullName email phoneNumber role",
-        },
+        populate: { path: "userId", select: "fullName email phoneNumber role" },
       })
       .populate({
         path: "session",
         select: "sport coach",
-        populate: {
-          path: "coach",
-          select: "fullName email",
-        },
+        populate: { path: "coach", select: "fullName email" },
       })
       .lean();
 
@@ -120,57 +101,56 @@ export const getDashboardOverview = async (req, res) => {
     });
 
     // ==========================================================
-    // ✅ Subscription Health (Scalable)
-    // Source of truth for coaches: CoachProfile.plan (free/pro/elite)
-    // Paid/active: CoachProfile.subscription.status === "active"
+    // ✅ Subscription Health (Dynamic Plans)
+    // - plans come from SubscriptionPlan (free/pro/elite/test/... auto)
+    // - counts come from CoachProfile.plan
     // ==========================================================
 
-    // Get planIds from SubscriptionPlan collection (so it adapts to future plans)
-    const plans = await SubscriptionPlan.find({}, { planId: 1 }).lean();
-    const planIds = plans.map((p) => p.planId); // e.g. ["free","pro","elite"] based on DB
-
-    // Count coaches per plan (only coach profiles)
-    const planCountsAgg = await CoachProfile.aggregate([
-      {
-        $group: {
-          _id: "$plan",
-          count: { $sum: 1 },
-        },
-      },
-    ]);
+    const [plansFromDb, planCountsAgg, totalCoachesProfiles, activeSubscribers, churnBase] =
+      await Promise.all([
+        SubscriptionPlan.find({}, { planId: 1, name: 1, price: 1, interval: 1 })
+          .sort({ price: 1 })
+          .lean(),
+        CoachProfile.aggregate([{ $group: { _id: "$plan", count: { $sum: 1 } } }]),
+        CoachProfile.countDocuments({}),
+        CoachProfile.countDocuments({ "subscription.status": "active" }),
+        CoachProfile.countDocuments({ "subscription.status": { $in: ["cancelled", "expired"] } }),
+      ]);
 
     const planCounts = {};
     for (const row of planCountsAgg) {
       planCounts[row._id || "unknown"] = row.count;
     }
 
-    const totalCoachesProfiles = await CoachProfile.countDocuments({});
+    // Build dynamic list to return
+    const plans = (plansFromDb || []).map((p) => ({
+      planId: p.planId,
+      name: p.name,
+      price: p.price ?? 0,
+      interval: p.interval ?? "month",
+      count: planCounts[p.planId] || 0,
+    }));
 
-    // UI currently shows Free + Pro. We compute those safely.
-    const freeCount = planCounts["free"] || 0;
-    const proCount = planCounts["pro"] || 0;
-
-    // Conversion: active paid subscribers / total coaches
-    // Treat "active" as a paid subscriber (you can expand later)
-    const activeSubscribers = await CoachProfile.countDocuments({
-      "subscription.status": "active",
+    // If CoachProfile.plan has unknown plan not in SubscriptionPlan, include it too
+    const knownPlanIds = new Set(plans.map((x) => x.planId));
+    Object.keys(planCounts).forEach((planId) => {
+      if (!planId || planId === "unknown") return;
+      if (!knownPlanIds.has(planId)) {
+        plans.push({
+          planId,
+          name: planId,
+          price: 0,
+          interval: "month",
+          count: planCounts[planId] || 0,
+        });
+      }
     });
 
-    const conversionRate =
-      totalCoachesProfiles > 0 ? (activeSubscribers / totalCoachesProfiles) * 100 : 0;
+    const conversionRate = totalCoachesProfiles > 0 ? (activeSubscribers / totalCoachesProfiles) * 100 : 0;
+    const churnRate = totalCoachesProfiles > 0 ? (churnBase / totalCoachesProfiles) * 100 : 0;
 
-    // Churn: only meaningful if you track cancellations/expiry.
-    // We'll compute a simple current churn snapshot:
-    // churn = cancelled or expired / total coaches
-    const churnBase = await CoachProfile.countDocuments({
-      "subscription.status": { $in: ["cancelled", "expired"] },
-    });
-    const churnRate =
-      totalCoachesProfiles > 0 ? (churnBase / totalCoachesProfiles) * 100 : 0;
-
-    // Optional: return all plan breakdown (future-proof, not required by UI now)
-    const plansBreakdown = planIds.reduce((acc, id) => {
-      acc[id] = planCounts[id] || 0;
+    const plansBreakdown = plans.reduce((acc, p) => {
+      acc[p.planId] = p.count;
       return acc;
     }, {});
 
@@ -183,18 +163,17 @@ export const getDashboardOverview = async (req, res) => {
           activeCoaches,
           activeParents,
           totalBookings,
-          completedBookings, // ✅ includes confirmed + completed
+          completedBookings,
           pendingBookings,
         },
         recentBookings,
         subscriptionHealth: {
           totalCoaches: totalCoachesProfiles,
-          freeCount,
-          proCount,
           activeSubscribers,
           conversionRate: parseFloat(conversionRate.toFixed(1)),
           churnRate: parseFloat(churnRate.toFixed(1)),
-          plansBreakdown, // ✅ scalable for later charts
+          plans, // ✅ IMPORTANT
+          plansBreakdown,
         },
       },
     });

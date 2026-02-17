@@ -5,6 +5,8 @@ import GuardianProfile from "../../models/GuardianProfile.js";
 import PlayerProfile from "../../models/PlayerProfile.js";
 import { calculateCoachCompletionRatio } from "../../utils/coachUtils.js";
 import Booking from "../../models/Booking.js";
+import Session from "../../models/Session.js";
+import SubscriptionPlan from "../../models/SubscriptionPlan.js";
 
 /**
  * GET /api/admin/coaches
@@ -158,110 +160,135 @@ export const getAllCoaches = async (req, res) => {
   }
 };
 
-/**
- * GET /api/admin/coaches/:id
- * Admin-only: Fetch full details of a single coach by user ID
- * Includes real total bookings and session completion stats
- */
 export const getCoachById = async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Validate ID
     if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid coach ID format",
-      });
+      return res.status(400).json({ success: false, message: "Invalid coach id" });
     }
 
-    // Find the coach User
-    const coachUser = await User.findOne({
-      _id: id,
-      role: "coach",
-    }).lean();
-
-    if (!coachUser) {
-      return res.status(404).json({
-        success: false,
-        message: "Coach not found or not a coach account",
-      });
+    // ---- User (coach) ----
+    const coachUser = await User.findById(id).lean();
+    if (!coachUser || coachUser.role !== "coach") {
+      return res.status(404).json({ success: false, message: "Coach not found" });
     }
 
-    // Fetch CoachProfile
-    const coachProfile = await CoachProfile.findOne({ userId: id }).lean();
+    // ---- Coach profile ----
+    const coachProfile = await CoachProfile.findOne({ userId: coachUser._id }).lean();
+    if (!coachProfile) {
+      return res.status(404).json({ success: false, message: "Coach profile not found" });
+    }
 
-    // NEW: Get real total bookings count (pending + confirmed only)
-    const bookingStats = await Booking.aggregate([
-      {
-        $lookup: {
-          from: "sessions",
-          localField: "session",
-          foreignField: "_id",
-          as: "session",
-        },
-      },
-      { $unwind: "$session" },
-      {
-        $match: {
-          "session.coach": new mongoose.Types.ObjectId(id),
-          status: { $in: ["pending", "confirmed"] },
-        },
-      },
-      { $count: "totalBookings" },
+    // ---- Subscription plan details from DB ----
+    const planId = coachProfile.plan || "free";
+    const planDoc = await SubscriptionPlan.findOne({ planId }).lean();
+
+    // ---- Sessions owned by coach (to connect bookings reliably) ----
+    // We will compute performance + financial using bookings connected to coach sessions
+    const coachSessions = await Session.find({ coach: coachUser._id }, { _id: 1 }).lean();
+    const sessionIds = coachSessions.map((s) => s._id);
+
+    // ---- Booking stats for this coach ----
+    const totalBookings = await Booking.countDocuments({ session: { $in: sessionIds } });
+
+    const completedLike = ["completed", "confirmed"];
+    const completedBookings = await Booking.countDocuments({
+      session: { $in: sessionIds },
+      status: { $in: completedLike },
+    });
+
+    const completionRatio = totalBookings > 0 ? completedBookings / totalBookings : 0;
+
+    // ---- Financial calculations ----
+    // totalEarned = sum(pricing.total) for completed-like bookings
+    const earnedAgg = await Booking.aggregate([
+      { $match: { session: { $in: sessionIds }, status: { $in: completedLike } } },
+      { $group: { _id: null, total: { $sum: { $ifNull: ["$pricing.total", 0] } } } },
     ]);
+    const totalEarned = Number(earnedAgg?.[0]?.total || 0);
 
-    const totalBookings = bookingStats[0]?.totalBookings || 0;
+    // pendingEarnings = sum(pricing.total) for pending/confirmed (depending on your business)
+    const pendingAgg = await Booking.aggregate([
+      { $match: { session: { $in: sessionIds }, status: { $in: ["pending", "confirmed"] } } },
+      { $group: { _id: null, total: { $sum: { $ifNull: ["$pricing.total", 0] } } } },
+    ]);
+    const pendingEarnings = Number(pendingAgg?.[0]?.total || 0);
 
-    // NEW: Calculate completion ratio from sessions (from your existing util)
-    const completionStats = await calculateCoachCompletionRatio(id);
+    // lastPayout (placeholder since you don't have payouts collection yet)
+    // We'll use the last completed booking date as "last payout date" for now.
+    const lastCompleted = await Booking.findOne({
+      session: { $in: sessionIds },
+      status: { $in: completedLike },
+    })
+      .sort({ createdAt: -1 })
+      .select("createdAt pricing.total")
+      .lean();
 
-    // Combine data
-    const coachData = {
-      id: coachUser._id,
-      fullName: coachUser.fullName,
-      email: coachUser.email,
-      phoneNumber: coachUser.phoneNumber || null,
-      role: coachUser.role,
-      createdAt: coachUser.createdAt,
-      lastProfileUpdate: coachUser.lastProfileUpdate || null,
+    const lastPayout = lastCompleted
+      ? {
+          amount: `£${Number(lastCompleted?.pricing?.total || 0).toFixed(2)}`,
+          date: new Date(lastCompleted.createdAt).toLocaleDateString("en-GB", {
+            day: "numeric",
+            month: "short",
+            year: "numeric",
+          }),
+        }
+      : { amount: "£0.00", date: "-" };
 
-      // Coach-specific fields (from CoachProfile)
-      profilePhoto: coachProfile?.profilePhoto || null,
-      coachTitle: coachProfile?.coachTitle || null,
-      specialties: coachProfile?.specialties || [],
-      primarySpecialization: coachProfile?.primarySpecialization || null,
-      certifications: coachProfile?.certifications || [],
-      experienceYears: coachProfile?.experienceYears || 0,
-      aboutMe: coachProfile?.aboutMe || "",
-      plan: coachProfile?.plan || "free",
-      subscription: coachProfile?.subscription || { status: "inactive" },
-      rating: coachProfile?.rating || 0,
-      playersCoachedCount: coachProfile?.playersCoachedCount || 0,
-      isVerified: coachProfile?.isVerified || false,
-      profileCompletionPercentage: coachProfile?.profileCompletionPercentage || 0,
-      availability: coachProfile?.availability || [],
+    // subscriptionFeesPaid (if you don't store payments, estimate based on plan price)
+    // If coach subscription is active, count months since createdAt or since subscription.expiresAt - 1 cycle.
+    let subscriptionFeesPaid = 0;
+    if (coachProfile.subscription?.status === "active" && planDoc?.price) {
+      // Basic estimate from coachProfile.updatedAt / createdAt
+      const startDate = coachProfile.createdAt ? new Date(coachProfile.createdAt) : new Date();
+      const months = Math.max(
+        0,
+        (new Date().getFullYear() - startDate.getFullYear()) * 12 +
+          (new Date().getMonth() - startDate.getMonth())
+      );
+      const monthlyPrice = planDoc.interval === "year" ? planDoc.price / 12 : planDoc.price;
+      subscriptionFeesPaid = Math.round(monthlyPrice * months);
+    }
 
-      // NEW: Real bookings count
-      totalBookings,
-
-      // Session completion stats
-      totalSessions: completionStats.totalSessions,
-      completedSessions: completionStats.completedSessions,
-      cancelledSessions: completionStats.cancelledSessions,
-      completionRatio: completionStats.completionRatio, // percentage (0–100)
-    };
-
+    // ---- Response (shape matches your frontend transform needs) ----
     return res.status(200).json({
       success: true,
-      data: coachData,
+      data: {
+        id: coachUser._id,
+        fullName: coachUser.fullName,
+        email: coachUser.email,
+        phoneNumber: coachUser.phoneNumber || "",
+        rating: coachProfile.rating || 0,
+        primarySpecialization: coachProfile.primarySpecialization || null,
+        plan: planId, // free/pro/elite/test etc.
+        subscription: {
+          status: coachProfile.subscription?.status || "inactive",
+          expiresAt: coachProfile.subscription?.expiresAt || null,
+        },
+        planMeta: planDoc
+          ? {
+              name: planDoc.name,
+              price: planDoc.price,
+              interval: planDoc.interval,
+              currency: planDoc.currency || "GBP",
+            }
+          : null,
+
+        totalBookings,
+        completionRatio,
+
+        financial: {
+          totalEarned: `£${totalEarned.toFixed(2)}`,
+          pendingEarnings: `£${pendingEarnings.toFixed(2)}`,
+          lastPayout,
+          subscriptionFeesPaid: `£${Number(subscriptionFeesPaid || 0).toFixed(2)}`,
+        },
+      },
     });
-  } catch (error) {
-    console.error("Admin get coach by ID error:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Failed to fetch coach details",
-    });
+  } catch (err) {
+    console.error("Admin get coach by id error:", err);
+    return res.status(500).json({ success: false, message: "Failed to fetch coach" });
   }
 };
 
