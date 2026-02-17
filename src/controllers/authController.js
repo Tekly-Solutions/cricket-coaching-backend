@@ -34,6 +34,12 @@ export const signup = async (req, res) => {
     const existingUser = await User.findOne({ firebaseUid: uid });
     if (existingUser) {
       console.log('✅ User already exists in MongoDB:', existingUser.email);
+      console.log(`👤 Existing Role: ${existingUser.role} | 🎯 Requested Role: ${role}`);
+
+      if (role && role !== existingUser.role) {
+        console.warn(`⚠️ ROLE MISMATCH: User is '${existingUser.role}' but requested '${role}'. Ignoring new role.`);
+      }
+
       // Return existing user (idempotent - safe to call multiple times)
       return res.status(200).json({
         success: true,
