@@ -19,6 +19,7 @@ import adminRouter from "./routes/adminRoutes.js";
 import cookieParser from "cookie-parser";
 import paymentRoutes from "./routes/paymentRoutes.js";
 import reviewRoutes from "./routes/reviewRoutes.js";
+import subscriptionRoutes from "./routes/subscriptionRoutes.js";
 
 
 const app = express();
@@ -81,6 +82,7 @@ app.use("/notifications", notificationRoutes);
 app.use("/search", searchRoutes);
 app.use("/payments", paymentRoutes);
 app.use("/reviews", reviewRoutes);
+app.use("/api/subscriptions", subscriptionRoutes);
 
 
 /* Admin routes */

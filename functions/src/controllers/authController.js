@@ -7,6 +7,7 @@ import CoachProfile from "../models/CoachProfile.js";
 import PlayerProfile from "../models/PlayerProfile.js";
 import GuardianProfile from "../models/GuardianProfile.js";
 import Notification from "../models/Notification.js";
+import { sendWelcomeEmail } from "../utils/emailService.js";
 
 export const signup = async (req, res) => {
   const session = await User.startSession();
@@ -105,6 +106,9 @@ export const signup = async (req, res) => {
     session.endSession();
 
     console.log('✅ User created successfully in MongoDB:', user[0].email);
+
+    // Send Welcome Email (Non-blocking)
+    sendWelcomeEmail(email, fullName, role).catch(err => console.error('Failed to send welcome email:', err));
 
     // Create welcome and profile completion notification
     try {
