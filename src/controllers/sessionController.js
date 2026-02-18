@@ -332,7 +332,7 @@ export const getSessionById = async (req, res) => {
       .populate('assignedPlayers.player', 'fullName profilePhoto email')
       .populate({
         path: 'coach',
-        select: 'role',
+        select: 'role fullName profilePhoto',
         populate: {
           path: 'coachProfile',
           select: 'fullName profilePhoto'
