@@ -19,6 +19,7 @@ import adminRouter from "./routes/adminRoutes.js";
 import cookieParser from "cookie-parser";
 import paymentRoutes from "./routes/paymentRoutes.js";
 import reviewRoutes from "./routes/reviewRoutes.js";
+import subscriptionRoutes from "./routes/subscriptionRoutes.js";
 
 
 const app = express();
@@ -42,12 +43,12 @@ app.use(
       if (!origin) {
         return callback(null, true);
       }
-      
+
       // Check if the origin is in our allowed list
       if (allowedOrigins.includes(origin)) {
         return callback(null, true);
       }
-      
+
       // Reject other origins
       callback(new Error('Not allowed by CORS'));
     },
@@ -80,6 +81,7 @@ app.use("/api/notifications", notificationRoutes);
 app.use("/api/search", searchRoutes);
 app.use("/api/payments", paymentRoutes);
 app.use("/api/reviews", reviewRoutes);
+app.use("/api/subscriptions", subscriptionRoutes);
 
 
 /* Admin routes */

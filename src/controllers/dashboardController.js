@@ -47,7 +47,7 @@ export const getCoachDashboard = async (req, res) => {
         const totalPlayers = await getUniquePlayersCount(userId);
         const rating = await getCoachRating(userId);
 
-        // Calculate Total Earnings (from Bookings, for robustness)
+        // Calculate Total Earnings (Net - sessionFee)
         // We fetch all sessions first to match bookings
         const allCoachSessions = await Session.find({ coach: userId }).select('_id');
         const allSessionIds = allCoachSessions.map(s => s._id);
@@ -62,12 +62,16 @@ export const getCoachDashboard = async (req, res) => {
             {
                 $group: {
                     _id: null,
-                    total: { $sum: '$pricing.total' }
+                    total: { $sum: '$pricing.sessionFee' } // Use sessionFee for Net Earnings
                 }
             }
         ]));
 
         const totalEarnings = totalEarningsResult[0]?.total || 0;
+
+        // Get Coach Profile for Currency
+        const coachProfile = await CoachProfile.findOne({ userId }).select('defaultPricing.currency');
+        const currency = coachProfile?.defaultPricing?.currency || 'USD';
 
         // --- Today's Summary Calculations ---
 
@@ -78,7 +82,7 @@ export const getCoachDashboard = async (req, res) => {
             status: { $nin: ['cancelled'] }
         });
 
-        // 2. Today's Earnings (from Bookings for today's sessions)
+        // 2. Today's Earnings (Net)
         // Find sessions happening today
         const todaySessions = await Session.find({
             coach: userId,
@@ -98,7 +102,7 @@ export const getCoachDashboard = async (req, res) => {
             {
                 $group: {
                     _id: null,
-                    total: { $sum: '$pricing.total' }
+                    total: { $sum: '$pricing.sessionFee' } // Use sessionFee
                 }
             }
         ]));
@@ -143,6 +147,7 @@ export const getCoachDashboard = async (req, res) => {
                     totalSessions,
                     totalPlayers,
                     totalEarnings,
+                    currency, // Return currency
                     rating: parseFloat(rating.toFixed(1)),
                 },
                 todaySummary: {
