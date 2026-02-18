@@ -3,6 +3,7 @@ import Booking from '../models/Booking.js';
 import Session from '../models/Session.js';
 import Notification from '../models/Notification.js';
 import Earning from '../models/Earning.js';
+import PromoCode from '../models/PromoCode.js';
 
 // Mock promo codes (in production, these would come from a database)
 const PROMO_CODES = {
@@ -634,27 +635,94 @@ export const cancelBooking = async (req, res) => {
  */
 export const validatePromoCode = async (req, res) => {
     try {
-        const { promoCode } = req.body;
+        const { code, planId, userId } = req.body;
 
-        if (!promoCode) {
-            return res.status(400).json({ message: 'Promo code is required' });
-        }
-
-        const promo = PROMO_CODES[promoCode.toUpperCase()];
-
-        if (promo) {
-            return res.json({
-                valid: true,
-                discount: promo.discount,
-                type: promo.type,
-                code: promoCode.toUpperCase()
+        if (!code) {
+            return res.status(400).json({
+                success: false,
+                message: 'Promo code is required'
             });
         }
 
-        return res.status(400).json({ message: 'Invalid promo code' });
+        // Find promo code in database
+        const promoCode = await PromoCode.findOne({ 
+            code: code.toUpperCase(),
+            status: 'active',
+        });
+
+        if (!promoCode) {
+            return res.status(404).json({
+                success: false,
+                message: 'Invalid or inactive promo code'
+            });
+        }
+
+        // Check date validity
+        const now = new Date();
+        if (promoCode.startDate > now || promoCode.endDate < now) {
+            return res.status(400).json({
+                success: false,
+                message: 'Promo code is not valid at this time'
+            });
+        }
+
+        // Check usage limits
+        if (promoCode.usageLimitEnabled) {
+            const limit = promoCode.maxRedemptions || promoCode.totalUsageLimit;
+            if (limit && promoCode.currentRedemptions >= limit) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Promo code usage limit exceeded'
+                });
+            }
+
+            // Check per-user limit for commission type
+            if (promoCode.category === 'commission' && userId && promoCode.limitPerUser) {
+                const userUsageCount = promoCode.usageHistory.filter(
+                    usage => usage.userId.toString() === userId
+                ).length;
+
+                if (userUsageCount >= promoCode.limitPerUser) {
+                    return res.status(400).json({
+                        success: false,
+                        message: 'You have exceeded the usage limit for this promo code'
+                    });
+                }
+            }
+        }
+
+        // Check plan applicability for subscription type
+        if (promoCode.category === 'subscription' && planId) {
+            if (!promoCode.applicablePlans.includes(planId)) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'This promo code is not applicable to the selected plan'
+                });
+            }
+        }
+
+        return res.status(200).json({
+            success: true,
+            data: {
+                valid: true,
+                promoCode: {
+                    id: promoCode._id,
+                    code: promoCode.code,
+                    discountType: promoCode.discountType,
+                    discountValue: promoCode.discountValue,
+                    minimumPrice: promoCode.minimumPrice,
+                    category: promoCode.category,
+                }
+            },
+            message: 'Promo code is valid'
+        });
     } catch (error) {
         console.error('Validate promo error:', error);
-        res.status(500).json({ message: 'Server error', error: error.message });
+        res.status(500).json({ 
+            success: false,
+            message: 'Server error', 
+            error: error.message 
+        });
     }
 };
 
