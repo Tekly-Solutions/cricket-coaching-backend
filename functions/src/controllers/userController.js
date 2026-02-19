@@ -111,6 +111,17 @@ export const updateUserProfile = async (req, res) => {
         "experienceYears",
         "aboutMe",
         "specialties",
+        "city",
+        "country",
+        "coachTitle",
+        "bio",
+        "primarySpecialization",
+        "certifications",
+        "coachingPhilosophy",
+        "notableAchievements",
+        "playingCareerBackground",
+        "ageGroupsCoached",
+        "sessionTypesOffered",
       ];
 
       const updateData = {};
@@ -119,6 +130,20 @@ export const updateUserProfile = async (req, res) => {
           updateData[field] = req.body[field];
         }
       });
+
+      // Handle currency: save both as top-level and inside defaultPricing
+      if (req.body.currency !== undefined) {
+        updateData.currency = req.body.currency;
+        updateData['defaultPricing.currency'] = req.body.currency;
+      }
+
+      // Handle hourlyRate and sessionDuration for defaultPricing
+      if (req.body.hourlyRate !== undefined) {
+        updateData['defaultPricing.hourlyRate'] = req.body.hourlyRate;
+      }
+      if (req.body.sessionDuration !== undefined) {
+        updateData['defaultPricing.sessionDuration'] = req.body.sessionDuration;
+      }
 
       profile = await CoachProfile.findOneAndUpdate(
         { userId },
@@ -195,4 +220,3 @@ export const updateUserProfile = async (req, res) => {
     });
   }
 };
-
