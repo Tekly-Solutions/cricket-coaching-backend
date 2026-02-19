@@ -63,6 +63,18 @@ const coachProfileSchema = new mongoose.Schema(
       maxlength: 100,
     },
 
+    country: {
+      type: String,
+      trim: true,
+      maxlength: 100,
+    },
+
+    currency: {
+      type: String,
+      trim: true,
+      maxlength: 10,
+    },
+
     // Default Pricing for Individual Bookings
     defaultPricing: {
       hourlyRate: {
@@ -72,7 +84,7 @@ const coachProfileSchema = new mongoose.Schema(
       },
       currency: {
         type: String,
-        default: 'USD',
+        default: null,
       },
       sessionDuration: {
         type: Number,  // in minutes

@@ -1,11 +1,14 @@
 
 import express from 'express';
-import { getActivePlans } from '../controllers/subscriptionController.js';
-// import { authenticateToken } from '../middlewares/authMiddleware.js'; // Optional: if we want to restrict to logged-in users
+import { getActivePlans, activateSubscription } from '../controllers/subscriptionController.js';
+import { hybridAuth } from '../middlewares/hybridAuth.js';
 
 const router = express.Router();
 
 // Public route to get active plans
 router.get('/plans', getActivePlans);
+
+// Authenticated route to activate a subscription
+router.post('/activate', hybridAuth, activateSubscription);
 
 export default router;
