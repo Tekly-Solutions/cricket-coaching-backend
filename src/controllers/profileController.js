@@ -82,7 +82,6 @@ export const updateProfile = async (req, res) => {
         if (fullName) user.fullName = fullName;
         if (email) user.email = email;
         if (phone) user.phoneNumber = phone; // Map 'phone' to 'phoneNumber'
-        if (profileImage) user.profileImage = profileImage;
 
         await user.save();
 
@@ -114,6 +113,7 @@ export const updateProfile = async (req, res) => {
 
             if (coachProfile) {
                 // Update all coach fields if provided
+                if (profileImage !== undefined) coachProfile.profilePhoto = profileImage;
                 if (bio !== undefined) coachProfile.aboutMe = bio;
                 if (city !== undefined) coachProfile.city = city;
                 if (hourlyRate !== undefined) {
