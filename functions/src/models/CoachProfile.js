@@ -1,3 +1,4 @@
+
 import mongoose from "mongoose";
 
 const coachProfileSchema = new mongoose.Schema(
@@ -214,15 +215,7 @@ const coachProfileSchema = new mongoose.Schema(
             start: { type: String, required: true }, // "09:00 AM"
             end: { type: String, required: true },   // "05:00 PM"
           }],
-          default: () => ({
-            '0': [{ start: "09:00 AM", end: "05:00 PM" }], // Monday
-            '1': [{ start: "09:00 AM", end: "05:00 PM" }], // Tuesday
-            '2': [{ start: "09:00 AM", end: "05:00 PM" }], // Wednesday
-            '3': [{ start: "09:00 AM", end: "05:00 PM" }], // Thursday
-            '4': [{ start: "09:00 AM", end: "05:00 PM" }], // Friday
-            '5': [], // Saturday - no schedule
-            '6': [], // Sunday - no schedule
-          }),
+          default: () => ({}),
         },
         // Legacy fields for backward compatibility
         activeDays: {

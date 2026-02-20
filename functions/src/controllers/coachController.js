@@ -120,20 +120,15 @@ export const getCoachAvailability = async (req, res) => {
       });
     }
 
-    // Initialize availability if it doesn't exist
+    // Initialize availability if it doesn't exist (empty - not pre-seeded)
     if (!profile.availability) {
       profile.availability = {
         recurringSchedule: {
           daySchedules: {
-            '0': [{ start: "09:00 AM", end: "05:00 PM" }],
-            '1': [{ start: "09:00 AM", end: "05:00 PM" }],
-            '2': [{ start: "09:00 AM", end: "05:00 PM" }],
-            '3': [{ start: "09:00 AM", end: "05:00 PM" }],
-            '4': [{ start: "09:00 AM", end: "05:00 PM" }],
-            '5': [],
-            '6': [],
+            '0': [], '1': [], '2': [], '3': [], '4': [], '5': [], '6': [],
           },
         },
+        dateOverrides: [],
         blockedDates: [],
       };
       await profile.save();
@@ -143,13 +138,7 @@ export const getCoachAvailability = async (req, res) => {
     if (!profile.availability.recurringSchedule) {
       profile.availability.recurringSchedule = {
         daySchedules: {
-          '0': [{ start: "09:00 AM", end: "05:00 PM" }],
-          '1': [{ start: "09:00 AM", end: "05:00 PM" }],
-          '2': [{ start: "09:00 AM", end: "05:00 PM" }],
-          '3': [{ start: "09:00 AM", end: "05:00 PM" }],
-          '4': [{ start: "09:00 AM", end: "05:00 PM" }],
-          '5': [],
-          '6': [],
+          '0': [], '1': [], '2': [], '3': [], '4': [], '5': [], '6': [],
         },
       };
       await profile.save();
@@ -158,13 +147,7 @@ export const getCoachAvailability = async (req, res) => {
     // Initialize daySchedules if it doesn't exist (for backward compatibility)
     if (!profile.availability.recurringSchedule.daySchedules) {
       profile.availability.recurringSchedule.daySchedules = {
-        '0': [{ start: "09:00 AM", end: "05:00 PM" }],
-        '1': [{ start: "09:00 AM", end: "05:00 PM" }],
-        '2': [{ start: "09:00 AM", end: "05:00 PM" }],
-        '3': [{ start: "09:00 AM", end: "05:00 PM" }],
-        '4': [{ start: "09:00 AM", end: "05:00 PM" }],
-        '5': [],
-        '6': [],
+        '0': [], '1': [], '2': [], '3': [], '4': [], '5': [], '6': [],
       };
       await profile.save();
     }
@@ -195,7 +178,7 @@ export const getCoachAvailability = async (req, res) => {
 export const updateCoachAvailability = async (req, res) => {
   try {
     const userId = req.user.userId;
-    const { recurringSchedule, blockedDates } = req.body;
+    const { recurringSchedule, dateOverrides, blockedDates } = req.body;
 
     const profile = await CoachProfile.findOne({ userId });
     if (!profile) {
@@ -208,9 +191,8 @@ export const updateCoachAvailability = async (req, res) => {
     // Initialize availability if it doesn't exist
     if (!profile.availability) {
       profile.availability = {
-        recurringSchedule: {
-          daySchedules: {},
-        },
+        recurringSchedule: { daySchedules: {} },
+        dateOverrides: [],
         blockedDates: [],
       };
     }
@@ -232,12 +214,19 @@ export const updateCoachAvailability = async (req, res) => {
         profile.availability.recurringSchedule.timeIntervals = recurringSchedule.timeIntervals;
       }
     }
+
+    // Save dateOverrides (calendar-specific slot overrides)
+    if (dateOverrides !== undefined) {
+      profile.availability.dateOverrides = dateOverrides;
+    }
+
     if (blockedDates !== undefined) {
       profile.availability.blockedDates = blockedDates;
     }
 
+    // Mark availability as modified (needed for nested object changes)
+    profile.markModified('availability');
     await profile.save();
-
     return res.status(200).json({
       success: true,
       message: "Availability updated successfully",
