@@ -47,27 +47,10 @@ export const getCoachDashboard = async (req, res) => {
         const totalPlayers = await getUniquePlayersCount(userId);
         const rating = await getCoachRating(userId);
 
-        // Calculate Total Earnings (Net - sessionFee)
-        // We fetch all sessions first to match bookings
-        const allCoachSessions = await Session.find({ coach: userId }).select('_id');
-        const allSessionIds = allCoachSessions.map(s => s._id);
-
-        const totalEarningsResult = await import('../models/Booking.js').then(m => m.default.aggregate([
-            {
-                $match: {
-                    session: { $in: allSessionIds },
-                    status: { $in: ['confirmed', 'completed'] }
-                }
-            },
-            {
-                $group: {
-                    _id: null,
-                    total: { $sum: '$pricing.sessionFee' } // Use sessionFee for Net Earnings
-                }
-            }
-        ]));
-
-        const totalEarnings = totalEarningsResult[0]?.total || 0;
+        // Calculate Total Earnings from Earning model (Consistent with Earnings Screen)
+        const earningModel = await import('../models/Earning.js').then(m => m.default);
+        const totalEarningsResult = await earningModel.getTotalEarnings(userId, ['confirmed', 'paid']);
+        const totalEarnings = totalEarningsResult?.total || 0;
 
         // Get Coach Profile for Currency
         const coachProfile = await CoachProfile.findOne({ userId }).select('defaultPricing.currency');

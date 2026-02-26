@@ -303,7 +303,7 @@ export const getPlayerBookings = async (req, res) => {
 export const getBookingById = async (req, res) => {
     try {
         const { id } = req.params;
-        const userId = req.user._id;
+        const userId = req.user.userId;
 
         const booking = await Booking.findById(id)
             .populate({
