@@ -17,12 +17,10 @@ const PROMO_CODES = {
  */
 export const createBooking = async (req, res) => {
     try {
-        const { sessionId, occurrenceDate, paymentMethod, promoCode, playerId: requestedPlayerId } = req.body;
+        const { sessionId, occurrenceDate, occurrenceDates, paymentMethod, promoCode, playerId: requestedPlayerId } = req.body;
         const userId = req.user.userId;
 
         // Resolve Player ID (It should be a PlayerProfile ID now)
-        // If guardian is booking, they send 'playerId' (profile ID)
-        // If player is booking, we find their profile ID from their user ID
         let playerProfileId = requestedPlayerId;
 
         if (req.user.role === 'player') {
@@ -38,16 +36,19 @@ export const createBooking = async (req, res) => {
             if (!guardian) return res.status(403).json({ message: 'You do not have permission to book for this player' });
         }
 
+        // Normalize dates to an array
+        const datesToBook = occurrenceDates && Array.isArray(occurrenceDates)
+            ? occurrenceDates
+            : [occurrenceDate];
+
         if (paymentMethod === 'test') {
-            console.log(`[TEST BOOKING] PlayerProfile ${playerProfileId} booking session ${sessionId}`);
+            console.log(`[TEST BOOKING] PlayerProfile ${playerProfileId} booking session ${sessionId} for ${datesToBook.length} dates`);
         }
 
-
-
         // Validate required fields
-        if (!sessionId || !occurrenceDate || !paymentMethod) {
+        if (!sessionId || datesToBook.length === 0 || !datesToBook[0] || !paymentMethod) {
             return res.status(400).json({
-                message: 'Session ID, occurrence date, and payment method are required',
+                message: 'Session ID, occurrence date(s), and payment method are required',
             });
         }
 
@@ -57,144 +58,150 @@ export const createBooking = async (req, res) => {
             return res.status(404).json({ message: 'Session not found' });
         }
 
-        // Verify the occurrence date is valid for this session
-        const requestedDate = new Date(occurrenceDate);
-        const isValidOccurrence = session.timeSlots.some(
-            (occ) => new Date(occ.startTime).getTime() === requestedDate.getTime()
-        );
-
-        if (!isValidOccurrence) {
-            return res.status(400).json({
-                message: 'Invalid occurrence date for this session',
-            });
-        }
-
-        // Check if player has already booked this occurrence
-        const existingBooking = await Booking.findOne({
-            player: playerProfileId,
-            session: sessionId,
-            occurrenceDate: requestedDate,
-            status: { $in: ['pending', 'confirmed'] },
-        });
-
-        if (existingBooking) {
-            return res.status(400).json({
-                message: 'You have already booked this session',
-            });
-        }
-
-        // Calculate pricing
-        const sessionFee = 60.00; // Base fee (could be from session.price in future)
+        // Calculate pricing based on Session data instead of hardcoded 60
+        const sessionFee = session.pricing?.amount || 60.00;
         const serviceFee = 2.50;
         const tax = 0.00;
-        let discount = 0.00;
+        let discountTotal = 0.00;
 
-        // Apply promo code if provided
+        // Apply promo code if provided (simplified for MVP)
         if (promoCode) {
             const promo = PROMO_CODES[promoCode.toUpperCase()];
             if (promo) {
-                discount = promo.discount;
+                discountTotal = promo.discount;
             }
         }
 
-        const total = sessionFee + serviceFee + tax - discount;
+        const createdBookings = [];
+        const errors = [];
 
-        // Create booking
-        const booking = new Booking({
-            player: playerProfileId,
-            session: sessionId,
-            occurrenceDate: requestedDate,
-            paymentMethod,
-            pricing: {
-                sessionFee,
-                serviceFee,
-                tax,
-                discount,
-                total,
-            },
-            promoCode: promoCode?.toUpperCase(),
-            // Check auto-accept setting
-            status: session.enrollmentSettings?.autoAccept ? 'confirmed' : 'pending',
-        });
+        for (const dateStr of datesToBook) {
+            try {
+                const requestedDate = new Date(dateStr);
 
-        await booking.save();
+                // Verify the occurrence date is valid for this session
+                const isValidOccurrence = session.timeSlots.some(
+                    (occ) => new Date(occ.startTime).getTime() === requestedDate.getTime()
+                );
 
-        // Populate booking with session and coach details
-        await booking.populate([
-            {
-                path: 'session',
-                select: 'title location coach',
-                populate: { path: 'coach', select: 'fullName' },
-            },
-            { path: 'player', select: 'fullName profilePhoto' }, // PlayerProfile fields
-            // We can also populate 'player.userId' if we need email
-            // { path: 'player', populate: { path: 'userId', select: 'email' } }
-        ]);
-
-        // Create notification for the coach
-        try {
-            await Notification.create({
-                recipient: session.coach._id,
-                sender: userId, // Notification sender is the logged in User (Player or Guardian)
-                type: 'booking_confirmed',
-                category: 'Schedule',
-                title: 'New Booking Confirmed',
-                description: `${booking.player.fullName} has booked your session "${session.title}" on ${requestedDate.toLocaleDateString()}`,
-                priority: 'high',
-                relatedEntity: {
-                    entityType: 'booking',
-                    entityId: booking._id,
-                },
-            });
-
-            // Update Session Participants
-            await Session.findByIdAndUpdate(sessionId, {
-                $addToSet: {
-                    assignedPlayers: {
-                        player: playerProfileId,
-                        status: booking.status,
-                        joinedAt: new Date(),
-                    }
+                if (!isValidOccurrence) {
+                    errors.push(`Invalid occurrence date: ${dateStr}`);
+                    continue;
                 }
-            });
-        } catch (notifError) {
-            console.error('Failed to create notification:', notifError);
-            // Don't fail the booking if notification fails
+
+                // Check if player has already booked this occurrence
+                const existingBooking = await Booking.findOne({
+                    player: playerProfileId,
+                    session: sessionId,
+                    occurrenceDate: requestedDate,
+                    status: { $in: ['pending', 'confirmed'] },
+                });
+
+                if (existingBooking) {
+                    errors.push(`Session already booked for date: ${dateStr}`);
+                    continue;
+                }
+
+                const total = sessionFee + serviceFee + tax - discountTotal;
+
+                // Create booking
+                const booking = new Booking({
+                    player: playerProfileId,
+                    session: sessionId,
+                    occurrenceDate: requestedDate,
+                    paymentMethod,
+                    pricing: {
+                        sessionFee,
+                        serviceFee,
+                        tax,
+                        discount: discountTotal,
+                        total,
+                    },
+                    promoCode: promoCode?.toUpperCase(),
+                    status: session.enrollmentSettings?.autoAccept ? 'confirmed' : 'pending',
+                });
+
+                await booking.save();
+
+                // Populate basic info for response/notification
+                await booking.populate([
+                    { path: 'player', select: 'fullName profilePhoto' }
+                ]);
+
+                createdBookings.push(booking);
+
+                // Update Session Participants
+                await Session.findByIdAndUpdate(sessionId, {
+                    $addToSet: {
+                        assignedPlayers: {
+                            player: playerProfileId,
+                            status: booking.status,
+                            joinedAt: new Date(),
+                        }
+                    }
+                });
+
+                // Create Earning Record
+                const coachNetEarning = sessionFee; // Coach gets sessionFee
+                await Earning.create({
+                    coach: (session.coach && session.coach._id) ? session.coach._id : session.coach,
+                    session: session._id,
+                    booking: booking._id,
+                    player: playerProfileId,
+                    amount: total,
+                    sessionTitle: session.title,
+                    sessionDate: requestedDate,
+                    sessionType: session.sessionType === 'one-time' ? 'one-on-one' : 'group',
+                    status: 'confirmed',
+                    currency: session.pricing?.currency || 'USD',
+                    platformFee: serviceFee,
+                    netAmount: coachNetEarning,
+                });
+
+                // Create notification for the coach
+                try {
+                    await Notification.create({
+                        recipient: session.coach._id || session.coach,
+                        sender: userId,
+                        type: 'booking_confirmed',
+                        category: 'Schedule',
+                        title: 'New Booking Confirmed',
+                        description: `${booking.player.fullName} has booked your session "${session.title}" on ${requestedDate.toLocaleDateString()}`,
+                        priority: 'high',
+                        relatedEntity: {
+                            entityType: 'booking',
+                            entityId: booking._id,
+                        },
+                    });
+                } catch (notifError) {
+                    console.error('Failed to create notification:', notifError);
+                }
+
+            } catch (innerError) {
+                console.error(`Error booking date ${dateStr}:`, innerError);
+                errors.push(`Failed to book date ${dateStr}: ${innerError.message}`);
+            }
         }
 
-        // Create Earning Record
-        try {
-            // Coach's net earning = sessionFee (total - serviceFee)
-            const coachNetEarning = booking.pricing.sessionFee;
-
-            await Earning.create({
-                coach: (session.coach && session.coach._id) ? session.coach._id : session.coach,
-                session: session._id,
-                booking: booking._id,
-                player: playerProfileId, // Use PlayerProfile ID so we can populate player info
-                amount: booking.pricing.total,
-                sessionTitle: session.title,
-                sessionDate: requestedDate,
-                sessionType: 'one-on-one', // Default for standard bookings
-                status: 'confirmed',
-                currency: 'USD',
-                platformFee: booking.pricing.serviceFee, // Track the commission
-                netAmount: coachNetEarning, // Coach gets sessionFee only
+        if (createdBookings.length === 0) {
+            return res.status(400).json({
+                message: 'Failed to create any bookings',
+                errors
             });
-        } catch (earningError) {
-            console.error('Failed to create earning record:', earningError);
-            // Don't fail the booking if earning creation fails, but log it critical
         }
 
         res.status(201).json({
-            message: 'Booking created successfully',
-            booking,
+            message: `Successfully created ${createdBookings.length} booking(s)`,
+            booking: createdBookings[0], // Return the first one for backwards compatibility
+            bookings: createdBookings,
+            errors: errors.length > 0 ? errors : undefined
         });
     } catch (error) {
         console.error('Create booking error:', error);
         res.status(500).json({ message: 'Server error', error: error.message });
     }
 };
+
 
 /**
  * Get player's bookings
@@ -261,10 +268,10 @@ export const getPlayerBookings = async (req, res) => {
                 select: 'title location coach occurrences',
                 populate: {
                     path: 'coach',
-                    select: 'role',
+                    select: 'role fullName profilePhoto phoneNumber',
                     populate: {
                         path: 'coachProfile',
-                        select: 'fullName profilePhoto'
+                        select: 'fullName profilePhoto coachTitle'
                     }
                 },
             })
@@ -645,7 +652,7 @@ export const validatePromoCode = async (req, res) => {
         }
 
         // Find promo code in database
-        const promoCode = await PromoCode.findOne({ 
+        const promoCode = await PromoCode.findOne({
             code: code.toUpperCase(),
             status: 'active',
         });
@@ -718,10 +725,10 @@ export const validatePromoCode = async (req, res) => {
         });
     } catch (error) {
         console.error('Validate promo error:', error);
-        res.status(500).json({ 
+        res.status(500).json({
             success: false,
-            message: 'Server error', 
-            error: error.message 
+            message: 'Server error',
+            error: error.message
         });
     }
 };

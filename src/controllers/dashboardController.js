@@ -206,7 +206,12 @@ export const getPlayerDashboard = async (req, res) => {
 
         // Get upcoming sessions (next 3)
         const upcomingSessions = await Session.find({
-            'assignedPlayers.player': userId,
+            assignedPlayers: {
+                $elemMatch: {
+                    player: userId,
+                    status: { $nin: ['cancelled', 'declined'] }
+                }
+            },
             'timeSlots.startTime': { $gt: now },
             status: { $nin: ['cancelled', 'completed'] },
         })
@@ -294,7 +299,12 @@ export const getGuardianDashboard = async (req, res) => {
 
         // Get sessions for all managed players
         const upcomingSessions = await Session.find({
-            'assignedPlayers.player': { $in: managedPlayerIds },
+            assignedPlayers: {
+                $elemMatch: {
+                    player: { $in: managedPlayerIds },
+                    status: { $nin: ['cancelled', 'declined'] }
+                }
+            },
             'timeSlots.startTime': { $gt: now },
             status: { $nin: ['cancelled', 'completed'] },
         })
