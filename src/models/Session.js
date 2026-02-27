@@ -158,6 +158,11 @@ const sessionSchema = new mongoose.Schema(
         default: '',
       },
       report: {
+        // 0. Performance Ratings
+        technicalRating: { type: Number, min: 0, max: 5, default: 0 },
+        physicalRating: { type: Number, min: 0, max: 5, default: 0 },
+        mentalRating: { type: Number, min: 0, max: 5, default: 0 },
+
         // 1. Overview
         primaryFocus: { type: String, default: '' },
 
