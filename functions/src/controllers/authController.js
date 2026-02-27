@@ -106,9 +106,8 @@ export const signup = async (req, res) => {
     session.endSession();
 
     console.log('✅ User created successfully in MongoDB:', user[0].email);
-
-    // Send Welcome Email (Non-blocking)
-    sendWelcomeEmail(email, fullName, role).catch(err => console.error('Failed to send welcome email:', err));
+    // Welcome email is sent on first VERIFIED login, not here,
+    // so the user receives it only after confirming their email.
 
     // Create welcome and profile completion notification
     try {
@@ -177,6 +176,14 @@ export const login = async (req, res) => {
     if (provider && !user.signInProviders.includes(provider)) {
       user.signInProviders.push(provider);
       await user.save();
+    }
+
+    // Send welcome email on first verified login (non-blocking)
+    if (!user.welcomeEmailSent) {
+      user.welcomeEmailSent = true;
+      sendWelcomeEmail(user.email, user.fullName, user.role)
+        .then(() => console.log('📧 Welcome email sent to:', user.email))
+        .catch(err => console.error('Failed to send welcome email:', err));
     }
 
     // access token

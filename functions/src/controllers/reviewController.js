@@ -93,6 +93,47 @@ export const getCoachReviews = async (req, res) => {
     }
 };
 
+// Get reviews received by the currently authenticated coach
+export const getMyReviews = async (req, res) => {
+    try {
+        const coachId = req.user.userId;
+        const { page = 1, limit = 20 } = req.query;
+
+        const reviews = await Review.find({ coach: coachId })
+            .populate('player', 'fullName profilePhoto profileUrl')
+            .populate('session', 'title date')
+            .sort({ createdAt: -1 })
+            .skip((page - 1) * parseInt(limit))
+            .limit(parseInt(limit));
+
+        const total = await Review.countDocuments({ coach: coachId });
+
+        // Compute overall average
+        const mongoose = (await import('mongoose')).default;
+        const aggResult = await Review.aggregate([
+            { $match: { coach: new mongoose.Types.ObjectId(coachId) } },
+            { $group: { _id: null, avgRating: { $avg: '$rating' } } }
+        ]);
+        const avgRating = aggResult.length > 0 ? parseFloat(aggResult[0].avgRating.toFixed(2)) : 0;
+
+        res.status(200).json({
+            status: 'success',
+            results: reviews.length,
+            total,
+            avgRating,
+            page: parseInt(page),
+            pages: Math.ceil(total / parseInt(limit)),
+            data: reviews
+        });
+    } catch (error) {
+        console.error('Get my reviews error:', error);
+        res.status(500).json({
+            status: 'error',
+            message: 'Failed to fetch your reviews'
+        });
+    }
+};
+
 // Helper to update coach average rating
 const updateCoachAverageRating = async (coachId) => {
     try {

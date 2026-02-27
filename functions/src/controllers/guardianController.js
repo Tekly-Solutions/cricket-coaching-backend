@@ -339,20 +339,55 @@ export const getPlayerDetails = async (req, res) => {
       });
     }
 
-    // Calculate real stats for the player
-    // Count how many sessions the player has been assigned to
-    const sessionCount = await Session.countDocuments({
-      "assignedPlayers.player": id,
-      status: { $in: ["completed", "confirmed", "published"] },
-    });
+    // Compute real stats from ALL sessions (no status filter — report can exist on any status)
+    const sessions = await Session.find({
+      'assignedPlayers.player': id,
+    }).select('assignedPlayers status').lean();
+
+    let totalSessions = sessions.length;
+    let techSum = 0, phySum = 0, mentalSum = 0, reportCount = 0;
+
+    for (const session of sessions) {
+      const entry = session.assignedPlayers.find(
+        (ap) => ap.player?.toString() === id
+      );
+      if (!entry?.report) continue;
+      const r = entry.report;
+      const hasReport = r.technicalRating > 0 || r.physicalRating > 0 || r.mentalRating > 0;
+      if (hasReport) {
+        techSum += r.technicalRating ?? 0;
+        phySum += r.physicalRating ?? 0;
+        mentalSum += r.mentalRating ?? 0;
+        reportCount++;
+      }
+    }
+
+    const avgTechnical = reportCount > 0 ? parseFloat((techSum / reportCount).toFixed(1)) : 0;
+    const avgPhysical = reportCount > 0 ? parseFloat((phySum / reportCount).toFixed(1)) : 0;
+    const avgMental = reportCount > 0 ? parseFloat((mentalSum / reportCount).toFixed(1)) : 0;
+    const avgRating = reportCount > 0
+      ? parseFloat(((techSum + phySum + mentalSum) / (reportCount * 3)).toFixed(1))
+      : 0;
 
     const stats = {
-      sessions: sessionCount,
-      rating: 4.8 // Fixed rating mock for now
+      totalSessions,
+      sessions: totalSessions,
+      avgRating: avgRating || null,
+      rating: avgRating || null,
+      avgTechnical: avgTechnical || null,
+      avgBatting: avgTechnical || null,       // backward compat
+      batting: avgTechnical || null,
+      avgPhysical: avgPhysical || null,
+      avgBowling: avgPhysical || null,        // backward compat
+      bowling: avgPhysical || null,
+      avgMental: avgMental || null,
+      avgFielding: avgMental || null,         // backward compat
+      fielding: avgMental || null,
+      reportCount,
     };
 
     return res.status(200).json({
-      status: "success",
+      status: 'success',
       data: { ...playerProfile, stats },
     });
   } catch (error) {
@@ -427,7 +462,7 @@ export const updatePlayer = async (req, res) => {
       });
     }
 
-    const { fullName, age, role, battingStyle, bowlingStyle, medicalIssues } = req.body;
+    const { fullName, age, role, battingStyle, bowlingStyle, medicalIssues, profilePhoto } = req.body;
 
     const updateData = {};
     if (fullName !== undefined) updateData.fullName = fullName;
@@ -436,6 +471,7 @@ export const updatePlayer = async (req, res) => {
     if (battingStyle !== undefined) updateData.battingStyle = battingStyle;
     if (bowlingStyle !== undefined) updateData.bowlingStyle = bowlingStyle;
     if (medicalIssues !== undefined) updateData.medicalIssues = medicalIssues;
+    if (profilePhoto !== undefined && profilePhoto !== null) updateData.profilePhoto = profilePhoto;
 
     const updatedPlayer = await PlayerProfile.findByIdAndUpdate(
       id,
