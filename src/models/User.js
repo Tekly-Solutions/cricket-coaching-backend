@@ -62,6 +62,11 @@ const userSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'GuardianProfile',
     },
+    // Set to true after welcome email is sent (on first verified login)
+    welcomeEmailSent: {
+      type: Boolean,
+      default: false,
+    },
   },
   { timestamps: true }
 );

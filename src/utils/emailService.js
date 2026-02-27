@@ -1,20 +1,20 @@
 import nodemailer from 'nodemailer';
 
 const transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: {
-        user: 'burlcoachapp@gmail.com',
-        pass: 'zgjj mknd fljm zybd',
-    },
+  service: 'gmail',
+  auth: {
+    user: 'burlcoachapp@gmail.com',
+    pass: 'zgjj mknd fljm zybd',
+  },
 });
 
 export const sendWelcomeEmail = async (email, fullName, role) => {
-    try {
-        const mailOptions = {
-            from: '"Burl Coach App" <burlcoachapp@gmail.com>',
-            to: email,
-            subject: 'Welcome to Burl Coach App!',
-            html: `
+  try {
+    const mailOptions = {
+      from: '"Burl Coach App" <burlcoachapp@gmail.com>',
+      to: email,
+      subject: 'Welcome to Burl Coach App!',
+      html: `
         <!DOCTYPE html>
         <html>
         <head>
@@ -40,16 +40,7 @@ export const sendWelcomeEmail = async (email, fullName, role) => {
                       <p style="color:#555;font-size:16px;line-height:1.6;">
                         We are excited to have you on board. Get ready to take your cricket journey to the next level!
                       </p>
-                      <table width="100%" cellpadding="0" cellspacing="0" style="margin:30px 0;">
-                        <tr>
-                          <td align="center">
-                            <a href="https://burlcoachapp.com/open-app"
-                               style="background-color:#FF6B00;color:#ffffff;text-decoration:none;padding:14px 32px;border-radius:8px;font-size:16px;font-weight:bold;display:inline-block;">
-                              Open Burl Coach App
-                            </a>
-                          </td>
-                        </tr>
-                      </table>
+
                       <p style="color:#888;font-size:14px;">
                         If you did not create this account, please ignore this email.
                       </p>
@@ -69,13 +60,13 @@ export const sendWelcomeEmail = async (email, fullName, role) => {
         </body>
         </html>
       `,
-        };
+    };
 
-        const info = await transporter.sendMail(mailOptions);
-        console.log('Email sent:', info.messageId);
-        return true;
-    } catch (error) {
-        console.error('Error sending welcome email:', error);
-        return false;
-    }
+    const info = await transporter.sendMail(mailOptions);
+    console.log('Email sent:', info.messageId);
+    return true;
+  } catch (error) {
+    console.error('Error sending welcome email:', error);
+    return false;
+  }
 };

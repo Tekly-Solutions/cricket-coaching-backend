@@ -243,7 +243,12 @@ export const getCoachSessions = async (req, res) => {
 
     // Query params
     const type = (req.query.type || 'all').toLowerCase();
-    const dateParam = req.query.date; // YYYY-MM-DD
+    // Frontend sends startDate/endDate as UTC ISO strings for the user's LOCAL day.
+    // Using bare 'YYYY-MM-DD' (old 'date' param) caused UTC-midnight misparse:
+    // e.g. IST 9AM slot = 03:30 UTC → appeared on the PREVIOUS UTC date.
+    const startDateParam = req.query.startDate; // UTC ISO, e.g. '2026-03-01T18:30:00.000Z'
+    const endDateParam = req.query.endDate;   // UTC ISO, e.g. '2026-03-02T18:29:59.999Z'
+    const isDateRequest = !!(startDateParam && endDateParam);
     const limit = parseInt(req.query.limit) || 10;
     const page = parseInt(req.query.page) || 1;
     const skip = (page - 1) * limit;
@@ -253,34 +258,20 @@ export const getCoachSessions = async (req, res) => {
     // Base query
     const query = { coach: userId };
 
-    // 📅 DATE FILTERING
-    if (dateParam) {
-      const selectedDate = new Date(dateParam);
-      if (!isNaN(selectedDate.getTime())) {
-        // Start of day (00:00:00)
-        const startOfDay = new Date(selectedDate);
-        startOfDay.setHours(0, 0, 0, 0);
-
-        // End of day (23:59:59)
-        const endOfDay = new Date(selectedDate);
-        endOfDay.setHours(23, 59, 59, 999);
-
-        // Find sessions that have at least one time slot overlapping with this day
-        // OR simpler: specific time slot starts within this day
-        query['timeSlots.startTime'] = {
-          $gte: startOfDay,
-          $lte: endOfDay,
-        };
-
-        // Ensure we don't show cancelled sessions for the day usage
+    // 📅 DATE FILTERING — boundaries already in UTC, use them directly
+    if (isDateRequest) {
+      const startOfDay = new Date(startDateParam);
+      const endOfDay = new Date(endDateParam);
+      if (!isNaN(startOfDay.getTime()) && !isNaN(endOfDay.getTime())) {
+        query['timeSlots.startTime'] = { $gte: startOfDay, $lte: endOfDay };
         query.status = { $ne: 'cancelled' };
       }
     }
-    // FALLBACK TO TYPE FILTERING IF NO DATE
+    // TYPE FILTERING (broad DB pass; refined per-slot in JS below)
     else {
-      // Filter by type
       if (type === 'upcoming') {
-        query['timeSlots.startTime'] = { $gt: now };
+        // Fetch sessions that have AT LEAST ONE future slot
+        query['timeSlots.endTime'] = { $gt: now };
         query.status = { $nin: ['cancelled', 'completed'] };
       } else if (type === 'past') {
         query.$or = [
@@ -298,24 +289,86 @@ export const getCoachSessions = async (req, res) => {
 
     // Fetch sessions
     const sessions = await Session.find(query)
-      .sort({ 'timeSlots.startTime': 1 }) // Always sort by time ascending for calendar/upcoming
+      .sort({ 'timeSlots.startTime': 1 })
       .skip(skip)
       .limit(limit)
       .populate('assignedPlayers.player', 'fullName profilePhoto')
       .lean();
 
-    // Total count for pagination
     const total = await Session.countDocuments(query);
+
+    // ─── Enrich each session with displaySlot + isFinished ──────────────────
+    // Recurring sessions have MANY time slots (one per day). We pick the
+    // correct one to show so cards always display the relevant occurrence:
+    //   date filter  → slot matching that calendar day
+    //   upcoming     → earliest slot whose endTime is still in the future
+    //   past         → most recent slot whose endTime is already in the past
+    //   all          → next future slot, falling back to most recent past
+    const enrichedSessions = sessions.map((session) => {
+      const slots = session.timeSlots || [];
+      let displaySlot = null;
+
+      if (isDateRequest) {
+        const startOfDay = new Date(startDateParam);
+        displaySlot =
+          slots.find((s) => {
+            const d = new Date(s.startTime);
+            return d >= startOfDay && d <= new Date(endDateParam);
+          }) || slots[0];
+      } else if (type === 'past') {
+        // Most recent slot that has already ended
+        const pastSlots = slots.filter((s) => new Date(s.endTime) <= now);
+        displaySlot =
+          pastSlots.length > 0
+            ? pastSlots.reduce((latest, s) =>
+              new Date(s.endTime) > new Date(latest.endTime) ? s : latest
+            )
+            : slots[slots.length - 1] || slots[0];
+      } else {
+        // upcoming / all: earliest slot whose end time is still in the future
+        const futureSlots = slots.filter((s) => new Date(s.endTime) > now);
+        if (futureSlots.length > 0) {
+          displaySlot = futureSlots.reduce((earliest, s) =>
+            new Date(s.startTime) < new Date(earliest.startTime) ? s : earliest
+          );
+        } else {
+          // All slots done – fall back to most recent past slot
+          const pastSlots = slots.filter((s) => new Date(s.endTime) <= now);
+          displaySlot =
+            pastSlots.length > 0
+              ? pastSlots.reduce((latest, s) =>
+                new Date(s.endTime) > new Date(latest.endTime) ? s : latest
+              )
+              : slots[0];
+        }
+      }
+
+      // isFinished: display slot has ended OR session explicitly completed
+      const isFinished =
+        session.status === 'completed' ||
+        (displaySlot != null && new Date(displaySlot.endTime) <= now);
+
+      return { ...session, displaySlot: displaySlot || null, isFinished };
+    });
+
+    // For 'upcoming', remove sessions where ALL slots are finished (no future occurrence)
+    const filteredSessions =
+      !isDateRequest && type === 'upcoming'
+        ? enrichedSessions.filter((s) => !s.isFinished)
+        : enrichedSessions;
+    // ────────────────────────────────────────────────────────────────────────
 
     return res.status(200).json({
       status: 'success',
-      results: sessions.length,
+      results: filteredSessions.length,
       total,
       page,
       pages: Math.ceil(total / limit),
-      type, // echo back the type for frontend clarity
-      date: dateParam,
-      data: sessions,
+      type,
+      startDate: startDateParam,
+      endDate: endDateParam,
+      sessions: filteredSessions,
+      data: filteredSessions, // backward-compat alias
     });
   } catch (error) {
     console.error('List coach sessions error:', error);
@@ -748,6 +801,100 @@ export const updatePlayerReport = async (req, res) => {
     return res.status(500).json({
       status: 'error',
       message: 'Failed to update player report',
+    });
+  }
+};
+
+// Get all session reports for a specific player (for guardian/player view)
+export const getPlayerReports = async (req, res) => {
+  try {
+    const { playerId } = req.params;
+
+    // Find ALL sessions where this player was assigned (no status filter)
+    const sessions = await Session.find({
+      'assignedPlayers.player': playerId,
+    })
+      .populate('coach', 'fullName profileUrl profilePhoto email')
+      .select('title date timeSlots assignedPlayers coach status createdAt')
+      .sort({ createdAt: -1 });
+
+    // Extract only the relevant player's report data from each session
+    const reports = [];
+    for (const session of sessions) {
+      const playerEntry = session.assignedPlayers.find(
+        (ap) => ap.player?.toString() === playerId
+      );
+
+      if (!playerEntry) continue;
+
+      const report = playerEntry.report;
+      const hasAnyData = report && (
+        report.technicalRating > 0 ||
+        report.physicalRating > 0 ||
+        report.mentalRating > 0 ||
+        report.primaryFocus ||
+        report.technicalWins ||
+        report.progress ||
+        report.closingEncouragement
+      );
+
+      // Always include so guardian can see attended sessions,
+      // but mark whether a report was written or not
+      const sessionDate = session.timeSlots?.[0]?.startTime ?? session.createdAt;
+
+      reports.push({
+        sessionId: session._id,
+        sessionTitle: session.title,
+        sessionDate,
+        sessionStatus: session.status,
+        coach: session.coach,
+        attended: playerEntry.attended,
+        hasReport: !!hasAnyData,
+        // Ratings
+        technicalRating: report?.technicalRating ?? 0,
+        physicalRating: report?.physicalRating ?? 0,
+        mentalRating: report?.mentalRating ?? 0,
+        // Overall (average of 3)
+        overall: report
+          ? parseFloat(
+            (
+              ((report.technicalRating ?? 0) +
+                (report.physicalRating ?? 0) +
+                (report.mentalRating ?? 0)) /
+              3
+            ).toFixed(1)
+          )
+          : 0,
+        // Text fields
+        primaryFocus: report?.primaryFocus ?? '',
+        technicalWins: report?.technicalWins ?? '',
+        progress: report?.progress ?? '',
+        intangibles: report?.intangibles ?? '',
+        technicalFlaws: report?.technicalFlaws ?? '',
+        tacticalMentalAspects: report?.tacticalMentalAspects ?? '',
+        specificDrills: report?.specificDrills ?? '',
+        fitnessConditioning: report?.fitnessConditioning ?? '',
+        goalForNextSession: report?.goalForNextSession ?? '',
+        closingEncouragement: report?.closingEncouragement ?? '',
+        // Backward compat aliases expected by the Flutter client
+        notes: report?.closingEncouragement ?? report?.primaryFocus ?? '',
+        coachNotes: report?.primaryFocus ?? '',
+        batting: report?.technicalRating ?? 0,
+        bowling: report?.physicalRating ?? 0,
+        fielding: report?.mentalRating ?? 0,
+      });
+    }
+
+    return res.status(200).json({
+      status: 'success',
+      total: reports.length,
+      data: reports,
+    });
+  } catch (error) {
+    console.error('Get player reports error:', error);
+    return res.status(500).json({
+      status: 'error',
+      message: 'Failed to fetch player reports',
     });
   }
 };
