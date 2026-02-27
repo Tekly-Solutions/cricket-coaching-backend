@@ -204,14 +204,14 @@ export const updateCoachAvailability = async (req, res) => {
       }
       // Support both new daySchedules format and legacy format
       if (recurringSchedule.daySchedules) {
-        profile.availability.recurringSchedule.daySchedules = recurringSchedule.daySchedules;
+        profile.set('availability.recurringSchedule.daySchedules', recurringSchedule.daySchedules);
       }
       // Legacy support
       if (recurringSchedule.activeDays) {
-        profile.availability.recurringSchedule.activeDays = recurringSchedule.activeDays;
+        profile.set('availability.recurringSchedule.activeDays', recurringSchedule.activeDays);
       }
       if (recurringSchedule.timeIntervals) {
-        profile.availability.recurringSchedule.timeIntervals = recurringSchedule.timeIntervals;
+        profile.set('availability.recurringSchedule.timeIntervals', recurringSchedule.timeIntervals);
       }
     }
 

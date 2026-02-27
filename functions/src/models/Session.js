@@ -157,6 +157,27 @@ const sessionSchema = new mongoose.Schema(
         type: String,
         default: '',
       },
+      report: {
+        // 1. Overview
+        primaryFocus: { type: String, default: '' },
+
+        // 2. Strengths & Positives
+        technicalWins: { type: String, default: '' },
+        progress: { type: String, default: '' },
+        intangibles: { type: String, default: '' },
+
+        // 3. Areas for Improvement
+        technicalFlaws: { type: String, default: '' },
+        tacticalMentalAspects: { type: String, default: '' },
+
+        // 4. Action Plan / Homework
+        specificDrills: { type: String, default: '' },
+        fitnessConditioning: { type: String, default: '' },
+
+        // 5. Looking Ahead
+        goalForNextSession: { type: String, default: '' },
+        closingEncouragement: { type: String, default: '' },
+      }
     }],
 
     sessionNotes: {

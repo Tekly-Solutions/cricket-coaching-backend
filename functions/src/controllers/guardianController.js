@@ -1,6 +1,7 @@
 // controllers/guardianController.js
 import mongoose from "mongoose";
 import GuardianProfile from "../models/GuardianProfile.js";
+import Session from "../models/Session.js"; // Added for getting player session count
 import PlayerProfile from "../models/PlayerProfile.js";
 import User from "../models/User.js";
 
@@ -175,24 +176,45 @@ export const createAndAddPlayer = async (req, res) => {
  */
 export const addPlayerToGuardian = async (req, res) => {
   try {
-    const { playerProfileId } = req.body;  // ← now expect PlayerProfile _id
+    const { playerProfileId, email } = req.body;
 
-    if (!playerProfileId) {
+    if (!playerProfileId && !email) {
       return res.status(400).json({
         status: "error",
-        message: "playerProfileId is required",
+        message: "playerProfileId or email is required",
       });
     }
 
-    if (!mongoose.Types.ObjectId.isValid(playerProfileId)) {
-      return res.status(400).json({
-        status: "error",
-        message: "Invalid playerProfileId format",
-      });
+    let playerProfile;
+
+    if (email) {
+      // Find the user by email
+      const user = await User.findOne({ email: email.toLowerCase().trim() });
+      if (!user) {
+        return res.status(404).json({
+          status: "error",
+          message: "No user found with this email address",
+        });
+      }
+      if (user.role !== "player") {
+        return res.status(400).json({
+          status: "error",
+          message: "User found is not a player",
+        });
+      }
+      // Find the player profile associated with this user
+      playerProfile = await PlayerProfile.findOne({ userId: user._id });
+    } else {
+      if (!mongoose.Types.ObjectId.isValid(playerProfileId)) {
+        return res.status(400).json({
+          status: "error",
+          message: "Invalid playerProfileId format",
+        });
+      }
+      // Check player profile exists
+      playerProfile = await PlayerProfile.findById(playerProfileId);
     }
 
-    // Check player profile exists
-    const playerProfile = await PlayerProfile.findById(playerProfileId);
     if (!playerProfile) {
       return res.status(404).json({
         status: "error",
@@ -211,7 +233,7 @@ export const addPlayerToGuardian = async (req, res) => {
     // Add to guardian
     const guardianProfile = await GuardianProfile.findOneAndUpdate(
       { userId: req.user.userId },
-      { $addToSet: { players: playerProfileId } },
+      { $addToSet: { players: playerProfile._id } },
       { new: true }
     );
 
@@ -317,9 +339,21 @@ export const getPlayerDetails = async (req, res) => {
       });
     }
 
+    // Calculate real stats for the player
+    // Count how many sessions the player has been assigned to
+    const sessionCount = await Session.countDocuments({
+      "assignedPlayers.player": id,
+      status: { $in: ["completed", "confirmed", "published"] },
+    });
+
+    const stats = {
+      sessions: sessionCount,
+      rating: 4.8 // Fixed rating mock for now
+    };
+
     return res.status(200).json({
       status: "success",
-      data: playerProfile,
+      data: { ...playerProfile, stats },
     });
   } catch (error) {
     console.error("Get player details error:", error);

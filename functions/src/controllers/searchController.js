@@ -357,6 +357,17 @@ export const getCoachAvailability = async (req, res) => {
       return res.status(200).json({ status: 'success', data: [] });
     }
 
+    // Extract booking settings
+    const bSettings = coach.bookingSettings || {};
+    const sessionDuration = coach.defaultPricing?.sessionDuration || 60;
+    const bufferTime = bSettings.bufferTime || 0;
+    const minAdvanceHours = bSettings.minAdvanceBookingHours || 0;
+    const maxAdvanceDays = bSettings.maxAdvanceBookingDays || 30;
+
+    const now = new Date();
+    const minAllowedDate = new Date(now.getTime() + minAdvanceHours * 60 * 60 * 1000);
+    const maxAllowedDate = new Date(now.getTime() + maxAdvanceDays * 24 * 60 * 60 * 1000);
+
     // Loop through each day in range
     for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
       const dayOfWeek = d.getDay(); // 0 = Sunday, 1 = Monday...
@@ -386,34 +397,37 @@ export const getCoachAvailability = async (req, res) => {
         const slotStart = parseTime(d, schedule.start);
         const slotEnd = parseTime(d, schedule.end);
 
-        // Break into hourly slots (or sessionDuration)
-        const sessionDuration = coach.defaultPricing?.sessionDuration || 60;
-
         let currentSlot = new Date(slotStart);
+
         // Loop while session fits
         while (currentSlot.getTime() + sessionDuration * 60000 <= slotEnd.getTime()) {
           const nextSlot = new Date(currentSlot.getTime() + sessionDuration * 60000);
 
-          // Check overlap with existing sessions
-          const isBooked = existingSessions.some(session => {
-            return session.timeSlots.some(ts => {
-              const sStart = new Date(ts.startTime);
-              const sEnd = new Date(ts.endTime);
-              // Overlap logic: (StartA < EndB) and (EndA > StartB)
-              return (currentSlot < sEnd && nextSlot > sStart);
-            });
-          });
+          // Check if slot violates min/max advance booking rules or is in the past
+          const isValidTimeWindow = currentSlot >= minAllowedDate && currentSlot <= maxAllowedDate && currentSlot >= now;
 
-          if (!isBooked) {
-            availability.push({
-              startTime: currentSlot.toISOString(),
-              endTime: nextSlot.toISOString(),
-              isAvailable: true,
+          if (isValidTimeWindow) {
+            // Check overlap with existing sessions
+            const isBooked = existingSessions.some(session => {
+              return session.timeSlots.some(ts => {
+                const sStart = new Date(ts.startTime);
+                const sEnd = new Date(ts.endTime);
+                // Overlap logic: (StartA < EndB) and (EndA > StartB)
+                return (currentSlot < sEnd && nextSlot > sStart);
+              });
             });
+
+            if (!isBooked) {
+              availability.push({
+                startTime: currentSlot.toISOString(),
+                endTime: nextSlot.toISOString(),
+                isAvailable: true,
+              });
+            }
           }
 
-          // Increment by session duration (or interval? let's assume contiguous blocks)
-          currentSlot = nextSlot;
+          // Increment by session duration PLUS buffer time for the next iteration
+          currentSlot = new Date(nextSlot.getTime() + bufferTime * 60000);
         }
       }
     }

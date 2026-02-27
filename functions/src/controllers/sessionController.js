@@ -1,4 +1,3 @@
-
 // controllers/sessionController.js
 import Session from '../models/Session.js';
 import mongoose from 'mongoose';
@@ -333,13 +332,13 @@ export const getSessionById = async (req, res) => {
       .populate('assignedPlayers.player', 'fullName profilePhoto email')
       .populate({
         path: 'coach',
-        select: 'role fullName profilePhoto',
+        select: 'role fullName profilePhoto phoneNumber',
         populate: {
           path: 'coachProfile',
-          select: 'fullName profilePhoto'
+          select: 'fullName profilePhoto coachTitle'
         }
       })
-      .populate('createdBy', 'fullName profilePhoto email')
+      .populate('createdBy', 'fullName profilePhoto email phoneNumber')
       .lean();
 
     if (!session) {
@@ -573,6 +572,182 @@ export const updateSessionAttendance = async (req, res) => {
     return res.status(500).json({
       status: 'error',
       message: 'Failed to update attendance',
+    });
+  }
+};
+
+/**
+ * POST /api/sessions/:id/start
+ * Marks a session as in-progress
+ */
+export const startSession = async (req, res) => {
+  try {
+    const session = await Session.findOneAndUpdate(
+      { _id: req.params.id, coach: req.user.userId },
+      { $set: { status: 'in-progress' } },
+      { new: true }
+    );
+
+    if (!session) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'Session not found or not authorized',
+      });
+    }
+
+    return res.status(200).json({
+      status: 'success',
+      data: session,
+    });
+  } catch (error) {
+    console.error('Start session error:', error);
+    return res.status(500).json({
+      status: 'error',
+      message: 'Failed to start session',
+    });
+  }
+};
+
+import Notification from '../models/Notification.js';
+import Booking from '../models/Booking.js';
+import PlayerProfile from '../models/PlayerProfile.js';
+
+/**
+ * POST /api/sessions/:id/complete
+ * Marks a session as completed, optionally saves notes
+ */
+export const completeSession = async (req, res) => {
+  try {
+    const { sessionNotes } = req.body;
+    const session = await Session.findOneAndUpdate(
+      { _id: req.params.id, coach: req.user.userId },
+      {
+        $set: {
+          status: 'completed',
+          sessionNotes: sessionNotes || ''
+        }
+      },
+      { new: true }
+    );
+
+    if (!session) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'Session not found or not authorized',
+      });
+    }
+
+    // Trigger Notification to players/guardians to leave a review
+    try {
+      const bookings = await Booking.find({
+        session: session._id,
+        status: { $in: ['confirmed', 'completed'] },
+      }).populate('player');
+
+      const userIdsToNotify = new Set();
+
+      for (const booking of bookings) {
+        if (booking.player) {
+          if (booking.player.userId) {
+            userIdsToNotify.add(booking.player.userId.toString());
+          } else if (booking.player.guardianId) {
+            userIdsToNotify.add(booking.player.guardianId.toString());
+          }
+        }
+      }
+
+      const notificationPromises = Array.from(userIdsToNotify).map(userId =>
+        Notification.create({
+          recipient: userId,
+          sender: req.user.userId, // Coach who completed the session
+          type: 'new_review', // Can use system or new_review. Let's use new_review
+          category: 'Performance',
+          title: 'Session Completed!',
+          description: `The session "${session.title}" has been completed. Please take a moment to leave a review for the coach.`,
+          relatedEntity: {
+            entityType: 'session',
+            entityId: session._id,
+          },
+          actionButton: {
+            text: 'Leave Review',
+            action: 'view_review',
+            url: `/add-review`,
+          },
+          metadata: {
+            sessionId: session._id.toString(),
+            coachId: req.user.userId.toString(),
+            sessionTitle: session.title,
+            coachName: req.user.fullName || 'Coach',
+          }
+        })
+      );
+
+      await Promise.all(notificationPromises);
+    } catch (notifErr) {
+      console.error('Error sending review notifications:', notifErr);
+      // We don't fail the completeSession request if notifications fail
+    }
+
+    return res.status(200).json({
+      status: 'success',
+      data: session,
+    });
+  } catch (error) {
+    console.error('Complete session error:', error);
+    return res.status(500).json({
+      status: 'error',
+      message: 'Failed to complete session',
+    });
+  }
+};
+
+/**
+ * PUT /api/sessions/:id/players/:playerId/report
+ * Create or update a detailed performance report for a player
+ */
+export const updatePlayerReport = async (req, res) => {
+  try {
+    const { id, playerId } = req.params;
+    const { report } = req.body;
+
+    if (!report) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'report object is required',
+      });
+    }
+
+    const session = await Session.findOneAndUpdate(
+      {
+        _id: id,
+        coach: req.user.userId,
+        'assignedPlayers.player': playerId
+      },
+      {
+        $set: {
+          'assignedPlayers.$.report': report
+        }
+      },
+      { new: true }
+    );
+
+    if (!session) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'Session or player not found',
+      });
+    }
+
+    return res.status(200).json({
+      status: 'success',
+      message: 'Player report updated',
+      data: session
+    });
+  } catch (error) {
+    console.error('Update player report error:', error);
+    return res.status(500).json({
+      status: 'error',
+      message: 'Failed to update player report',
     });
   }
 };

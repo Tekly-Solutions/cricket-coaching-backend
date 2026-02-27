@@ -2,6 +2,7 @@ import User from "../models/User.js";
 import CoachProfile from "../models/CoachProfile.js";
 import PlayerProfile from "../models/PlayerProfile.js";
 import GuardianProfile from "../models/GuardianProfile.js";
+import admin from "../config/firebase.js";
 
 export const getUserProfile = async (req, res) => {
   try {
@@ -217,6 +218,57 @@ export const updateUserProfile = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Internal server error",
+    });
+  }
+};
+
+export const deleteAccount = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    const role = user.role.toLowerCase();
+
+    // 1. Delete Role Profile
+    if (role === "coach") {
+      await CoachProfile.findOneAndDelete({ userId });
+    } else if (role === "player") {
+      await PlayerProfile.findOneAndDelete({ userId });
+    } else if (role === "guardian") {
+      await GuardianProfile.findOneAndDelete({ userId });
+    }
+
+    // 2. Delete from Firebase Auth if firebaseUid exists
+    if (user.firebaseUid) {
+      try {
+        await admin.auth().deleteUser(user.firebaseUid);
+        console.log(`✅ Firebase user ${user.firebaseUid} deleted.`);
+      } catch (fbError) {
+        console.error("Error deleting user from Firebase Auth:", fbError.message);
+        // Continue even if Firebase deletion fails, log the error.
+      }
+    }
+
+    // 3. Delete from MongoDB
+    await User.findByIdAndDelete(userId);
+    console.log(`✅ MongoDB user ${userId} deleted.`);
+
+    return res.status(200).json({
+      success: true,
+      message: "Account deleted successfully",
+    });
+  } catch (error) {
+    console.error("Delete account error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error while deleting account",
     });
   }
 };
