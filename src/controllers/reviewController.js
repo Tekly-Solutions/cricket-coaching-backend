@@ -6,7 +6,7 @@ import CoachProfile from '../models/CoachProfile.js';
 export const createReview = async (req, res) => {
     try {
         const { sessionId, coachId, rating, comment } = req.body;
-        const playerId = req.user._id;
+        const playerId = req.user.userId;
 
         // Check if player actually booked and completed this session
         // For simplicity, we might just check if a booking exists for now.

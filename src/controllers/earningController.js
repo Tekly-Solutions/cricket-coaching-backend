@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import Earning from '../models/Earning.js';
 import Session from '../models/Session.js';
 import Booking from '../models/Booking.js';
@@ -20,7 +21,7 @@ export const getTotalEarnings = async (req, res) => {
     const lastMonth = await Earning.aggregate([
       {
         $match: {
-          coach: req.user._id,
+          coach: new mongoose.Types.ObjectId(coachId),
           status: { $in: ['confirmed', 'paid'] },
           sessionDate: {
             $gte: lastMonthStart,
@@ -40,7 +41,7 @@ export const getTotalEarnings = async (req, res) => {
     const currentMonth = await Earning.aggregate([
       {
         $match: {
-          coach: req.user._id,
+          coach: new mongoose.Types.ObjectId(coachId),
           status: { $in: ['confirmed', 'paid'] },
           sessionDate: {
             $gte: currentMonthStart,
@@ -236,7 +237,7 @@ export const getEarningsSummary = async (req, res) => {
       Earning.aggregate([
         {
           $match: {
-            coach: coachId,
+            coach: new mongoose.Types.ObjectId(coachId),
             status: { $in: ['confirmed', 'paid'] },
             sessionDate: { $gte: currentMonthStart },
           },
@@ -253,7 +254,7 @@ export const getEarningsSummary = async (req, res) => {
       Earning.aggregate([
         {
           $match: {
-            coach: coachId,
+            coach: new mongoose.Types.ObjectId(coachId),
             status: { $in: ['confirmed', 'paid'] },
             sessionDate: {
               $gte: lastMonthStart,
