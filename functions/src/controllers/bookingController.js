@@ -4,6 +4,7 @@ import Session from '../models/Session.js';
 import Notification from '../models/Notification.js';
 import Earning from '../models/Earning.js';
 import PromoCode from '../models/PromoCode.js';
+import CommissionSettings from '../models/CommissionSettings.js';
 
 // Mock promo codes (in production, these would come from a database)
 const PROMO_CODES = {
@@ -85,7 +86,17 @@ export const createBooking = async (req, res) => {
 
         // Calculate pricing
         const sessionFee = 60.00; // Base fee (could be from session.price in future)
-        const serviceFee = 2.50;
+        
+        // Get dynamic commission/service fee from settings
+        const commissionSettings = await CommissionSettings.getSettings();
+        const guardianUserId = req.user?.userId || req.user?.id;
+        const commissionCalc = commissionSettings.calculateCommission(
+            sessionFee,
+            guardianUserId,
+            null // sportName - could be added from session if available
+        );
+        const serviceFee = commissionCalc.amount;
+        
         const tax = 0.00;
         let discount = 0.00;
 
@@ -835,7 +846,16 @@ export const createPrivateBooking = async (req, res) => {
         await session.save();
 
         // 5. Create Bookings (One per player)
-        const serviceFee = 2.50;
+        // Get dynamic commission/service fee from settings
+        const commissionSettings = await CommissionSettings.getSettings();
+        const guardianUserId = req.user?.userId || req.user?.id;
+        const commissionCalc = commissionSettings.calculateCommission(
+            adjustedFee,
+            guardianUserId,
+            null // sportName - could be added from session if available
+        );
+        const serviceFee = commissionCalc.amount;
+        
         const tax = 0.00;
         let discount = 0.00;
 
