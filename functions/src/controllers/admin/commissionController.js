@@ -8,6 +8,11 @@ export const getCommissionSettings = async (req, res) => {
   try {
     console.log('🔵 Fetching commission settings...');
     const settings = await CommissionSettings.getSettings();
+    
+    // Populate user details in userOverrides
+    await settings.populate('userOverrides.userId', 'fullName email');
+
+    console.log('✅ Commission settings fetched. Global rate:', settings.globalRate);
 
     res.status(200).json({
       success: true,
@@ -28,7 +33,7 @@ export const getCommissionSettings = async (req, res) => {
  */
 export const updateGlobalRate = async (req, res) => {
   try {
-    const { rate, effectiveDate } = req.body;
+    const { rate } = req.body;
 
     if (rate === undefined || rate < 0 || rate > 100) {
       return res.status(400).json({
@@ -40,16 +45,18 @@ export const updateGlobalRate = async (req, res) => {
     console.log('🔵 Updating global commission rate to:', rate);
 
     const settings = await CommissionSettings.getSettings();
+    console.log('Current global rate:', settings.globalRate);
+    
     settings.globalRate = rate;
     settings.updatedBy = req.user?.userId || req.user?.id;
-    await settings.save();
+    const savedSettings = await settings.save();
 
-    console.log('✅ Global commission rate updated successfully');
+    console.log('✅ Global commission rate updated successfully. New rate:', savedSettings.globalRate, 'Updated at:', savedSettings.updatedAt);
 
     res.status(200).json({
       success: true,
       message: 'Global commission rate updated successfully',
-      data: settings,
+      data: savedSettings,
     });
   } catch (error) {
     console.error('❌ Update global rate error:', error);

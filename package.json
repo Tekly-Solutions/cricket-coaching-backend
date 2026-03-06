@@ -2,12 +2,12 @@
   "name": "cricket-coaching-backend",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "functions/index.js",
   "scripts": {
-    "start": "node src/server.js",
-    "dev": "nodemon src/server.js",
-    "seed:sample": "node src/scripts/seedSampleUsers.js",
-    "seed:admin": "node src/scripts/seed-admin.js"
+    "start": "node functions/src/server.js",
+    "dev": "nodemon functions/src/server.js",
+    "seed:sample": "node functions/src/scripts/seedSampleUsers.js",
+    "seed:admin": "node functions/src/scripts/seed-admin.js"
   },
   "repository": {
     "type": "git",
