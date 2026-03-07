@@ -13,6 +13,8 @@ import {
   completeSession,
   updatePlayerReport,
   getPlayerReports,
+  getPlayerSessions,
+  getGuardianSessions,
 } from '../controllers/sessionController.js';
 import { hybridAuth } from '../middlewares/hybridAuth.js';
 import { roleAuth } from '../middlewares/roleAuth.js';
@@ -37,7 +39,9 @@ router
   .post(coachOnly, createSession)           // only coaches can create
   .get(coachOnly, getCoachSessions);        // only coaches see their own sessions
 
-// Player reports — placed BEFORE /:id to avoid param collision
+// Player routes — placed BEFORE /:id to avoid param collision
+router.get('/player',                    roleAuth('player'), getPlayerSessions);  // player's own sessions
+router.get('/guardian',                  roleAuth('guardian'), getGuardianSessions); // guardian's managed players sessions
 router.get('/player-reports/:playerId', getPlayerReports);
 
 router

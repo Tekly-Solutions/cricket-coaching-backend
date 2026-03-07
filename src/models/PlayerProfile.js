@@ -70,6 +70,13 @@ const playerProfileSchema = new mongoose.Schema(
       default: "",
     },
 
+    // Home address (for self-managed players)
+    address: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+
     // Optional – can be calculated or set manually
     // Helps quickly identify who needs guardian oversight
     isSelfManaged: {

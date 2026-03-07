@@ -52,6 +52,7 @@ export const updateProfile = async (req, res) => {
             email,
             phone,
             profileImage,
+            profilePhoto, // App sends profilePhoto natively
             // Coach-specific fields
             bio,
             city,
@@ -69,7 +70,13 @@ export const updateProfile = async (req, res) => {
             sessionTypesOffered,
             // Player-specific fields
             playingPosition,
-            skillLevel
+            skillLevel,
+            address,
+            age,
+            role,
+            battingStyle,
+            bowlingStyle,
+            medicalIssues
         } = req.body;
 
         // Find user
@@ -78,10 +85,13 @@ export const updateProfile = async (req, res) => {
             return res.status(404).json({ message: 'User not found' });
         }
 
+        const effectiveProfileImage = profileImage || profilePhoto;
+
         // Update user fields
         if (fullName) user.fullName = fullName;
         if (email) user.email = email;
         if (phone) user.phoneNumber = phone; // Map 'phone' to 'phoneNumber'
+        if (effectiveProfileImage) user.profileImage = effectiveProfileImage; // save to base user as well
 
         await user.save();
 
@@ -140,15 +150,23 @@ export const updateProfile = async (req, res) => {
         } else if (userRole === 'player' && user.playerProfile) {
             const playerProfile = await PlayerProfile.findById(user.playerProfile);
             if (playerProfile) {
-                if (playingPosition) playerProfile.playingPosition = playingPosition;
-                if (skillLevel) playerProfile.skillLevel = skillLevel;
+                if (effectiveProfileImage) playerProfile.profilePhoto = effectiveProfileImage;
+                if (playingPosition !== undefined) playerProfile.playingPosition = playingPosition;
+                if (skillLevel !== undefined) playerProfile.skillLevel = skillLevel;
+                if (address !== undefined) playerProfile.address = address;
+                if (age !== undefined) playerProfile.age = age;
+                if (role !== undefined) playerProfile.role = role;
+                if (battingStyle !== undefined) playerProfile.battingStyle = battingStyle;
+                if (bowlingStyle !== undefined) playerProfile.bowlingStyle = bowlingStyle;
+                if (medicalIssues !== undefined) playerProfile.medicalIssues = medicalIssues;
+                
                 await playerProfile.save();
             }
         } else if (userRole === 'guardian' && user.guardianProfile) {
             // Guardian profile updates
             const guardianProfile = await GuardianProfile.findById(user.guardianProfile);
             if (guardianProfile) {
-                // Update phone number in guardian profile too
+                if (effectiveProfileImage) guardianProfile.profilePhoto = effectiveProfileImage;
                 if (phone) guardianProfile.phoneNumber = phone;
                 await guardianProfile.save();
             }

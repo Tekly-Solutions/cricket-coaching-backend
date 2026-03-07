@@ -14,6 +14,11 @@ const guardianProfileSchema = new mongoose.Schema(
       trim: true,
     },
 
+    profilePhoto: {
+      type: String,
+      default: null,
+    },
+
     address: {
       type: String,
       trim: true,

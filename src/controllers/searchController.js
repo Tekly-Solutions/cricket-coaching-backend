@@ -353,20 +353,29 @@ export const getCoachAvailability = async (req, res) => {
     const daySchedules = recurringSchedule ? recurringSchedule.daySchedules : null;
     const blockedDates = (coach.availability && coach.availability.blockedDates) || [];
 
-    if (!daySchedules) {
-      return res.status(200).json({ status: 'success', data: [] });
-    }
-
     // Extract booking settings
     const bSettings = coach.bookingSettings || {};
     const sessionDuration = coach.defaultPricing?.sessionDuration || 60;
     const bufferTime = bSettings.bufferTime || 0;
     const minAdvanceHours = bSettings.minAdvanceBookingHours || 0;
-    const maxAdvanceDays = bSettings.maxAdvanceBookingDays || 30;
+    const maxAdvanceDays = bSettings.maxAdvanceBookingDays || 90;
 
     const now = new Date();
     const minAllowedDate = new Date(now.getTime() + minAdvanceHours * 60 * 60 * 1000);
     const maxAllowedDate = new Date(now.getTime() + maxAdvanceDays * 24 * 60 * 60 * 1000);
+
+    // Check if new daySchedules Map has any configured entries
+    const hasDaySchedules = daySchedules && daySchedules.size > 0;
+
+    // Fall back to legacy activeDays + timeIntervals format (for older coach profiles)
+    const legacyActiveDays = recurringSchedule?.activeDays;
+    const legacyTimeIntervals = recurringSchedule?.timeIntervals;
+    const hasLegacySchedule = legacyActiveDays && legacyActiveDays.length > 0
+      && legacyTimeIntervals && legacyTimeIntervals.length > 0;
+
+    if (!hasDaySchedules && !hasLegacySchedule) {
+      return res.status(200).json({ status: 'success', data: [] });
+    }
 
     // Loop through each day in range
     for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
@@ -374,10 +383,19 @@ export const getCoachAvailability = async (req, res) => {
       // Map JS day to Profile day: 0=Monday, ... 6=Sunday.
       const profileDayIndex = (dayOfWeek + 6) % 7;
 
-      // Since daySchedules is a Map in Mongoose, use .get()
-      const schedules = daySchedules.get(profileDayIndex.toString());
+      let schedulesForDay = [];
 
-      if (!schedules || schedules.length === 0) continue;
+      if (hasDaySchedules) {
+        // New format: daySchedules Map keyed by profileDayIndex string
+        schedulesForDay = daySchedules.get(profileDayIndex.toString()) || [];
+      } else if (hasLegacySchedule) {
+        // Legacy format: activeDays contains JS dayOfWeek values (0=Sun, 1=Mon,...,6=Sat)
+        if (legacyActiveDays.includes(dayOfWeek)) {
+          schedulesForDay = legacyTimeIntervals.map(ti => ({ start: ti.start, end: ti.end }));
+        }
+      }
+
+      if (schedulesForDay.length === 0) continue;
 
       // Check if Date is Blocked
       const isBlocked = blockedDates.some(bd => {
@@ -392,7 +410,7 @@ export const getCoachAvailability = async (req, res) => {
       if (isBlocked) continue;
 
       // Generate slots for this day
-      for (const schedule of schedules) {
+      for (const schedule of schedulesForDay) {
         // Parse "09:00 AM" to Date object for this day
         const slotStart = parseTime(d, schedule.start);
         const slotEnd = parseTime(d, schedule.end);
