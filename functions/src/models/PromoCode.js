@@ -20,7 +20,7 @@ const promoCodeSchema = new mongoose.Schema(
     
     category: {
       type: String,
-      enum: ["subscription", "commission"],
+      enum: ["subscription", "commission", "booking"],
       required: true,
     },
     

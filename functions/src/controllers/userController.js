@@ -1,8 +1,13 @@
+
 import User from "../models/User.js";
 import CoachProfile from "../models/CoachProfile.js";
 import PlayerProfile from "../models/PlayerProfile.js";
 import GuardianProfile from "../models/GuardianProfile.js";
 import admin from "../config/firebase.js";
+import Session from "../models/Session.js";
+import Booking from "../models/Booking.js";
+import Earning from "../models/Earning.js";
+import Notification from "../models/Notification.js";
 
 export const getUserProfile = async (req, res) => {
   try {
@@ -159,6 +164,11 @@ export const updateUserProfile = async (req, res) => {
         "age",
         "skillLevel",
         "preferredPosition",
+        "battingStyle",
+        "bowlingStyle",
+        "role",           // cricket playing role (Batsman, Bowler, etc.)
+        "medicalIssues",
+        "address",
       ];
 
       const updateData = {};
@@ -235,8 +245,86 @@ export const deleteAccount = async (req, res) => {
     }
 
     const role = user.role.toLowerCase();
+    const now = new Date();
 
-    // 1. Delete Role Profile
+    // ── COACH: enforce no active bookings on upcoming sessions ──────────────
+    if (role === "coach") {
+      // Find upcoming sessions by this coach that still have future time slots
+      const upcomingSessions = await Session.find({
+        coach: userId,
+        status: { $nin: ["cancelled", "completed"] },
+        "timeSlots.startTime": { $gt: now },
+      }).select("_id title timeSlots").lean();
+
+      const upcomingSessionIds = upcomingSessions.map((s) => s._id);
+
+      if (upcomingSessionIds.length > 0) {
+        // Check if any of those sessions have active bookings
+        const activeBookingCount = await Booking.countDocuments({
+          session: { $in: upcomingSessionIds },
+          status: { $in: ["pending", "confirmed"] },
+        });
+
+        if (activeBookingCount > 0) {
+          return res.status(400).json({
+            success: false,
+            message:
+              "You have active bookings on upcoming sessions. " +
+              "Please cancel or wait for all upcoming sessions to complete before deleting your account. " +
+              "Cancelling a session will automatically refund all booked players.",
+            activeBookingCount,
+            upcomingSessionCount: upcomingSessionIds.length,
+          });
+        }
+      }
+
+      // No blocking active bookings — cancel all remaining upcoming sessions
+      // and refund/notify any pending bookings (edge case: pending that slipped through)
+      for (const session of upcomingSessions) {
+        // Cancel the session
+        await Session.findByIdAndUpdate(session._id, { status: "cancelled" });
+
+        // Cancel & refund any bookings still pending/confirmed
+        const bookingsToCancel = await Booking.find({
+          session: session._id,
+          status: { $in: ["pending", "confirmed"] },
+        }).populate("player", "userId");
+
+        for (const booking of bookingsToCancel) {
+          booking.status = "cancelled";
+          booking.cancelledAt = now;
+          booking.cancelReason = "Coach deleted their account";
+          await booking.save();
+
+          // Mark earning as refunded
+          await Earning.findOneAndUpdate(
+            { booking: booking._id },
+            { status: "refunded", netAmount: 0 }
+          );
+
+          // Notify the player/guardian
+          const recipientUserId =
+            booking.player?.userId ?? booking.playerUserId;
+          if (recipientUserId) {
+            try {
+              await Notification.create({
+                recipient: recipientUserId,
+                sender: userId,
+                type: "booking_cancelled",
+                category: "Schedule",
+                title: "Session Cancelled – Refund Issued",
+                description: `"${session.title}" has been cancelled because the coach deleted their account. A full refund has been issued.`,
+                relatedEntity: { entityType: "booking", entityId: booking._id },
+              });
+            } catch (e) {
+              console.error("Notification error during account deletion:", e);
+            }
+          }
+        }
+      }
+    }
+
+    // ── DELETE ROLE PROFILE ──────────────────────────────────────────────────
     if (role === "coach") {
       await CoachProfile.findOneAndDelete({ userId });
     } else if (role === "player") {
@@ -245,18 +333,17 @@ export const deleteAccount = async (req, res) => {
       await GuardianProfile.findOneAndDelete({ userId });
     }
 
-    // 2. Delete from Firebase Auth if firebaseUid exists
+    // ── DELETE FROM FIREBASE AUTH ────────────────────────────────────────────
     if (user.firebaseUid) {
       try {
         await admin.auth().deleteUser(user.firebaseUid);
         console.log(`✅ Firebase user ${user.firebaseUid} deleted.`);
       } catch (fbError) {
         console.error("Error deleting user from Firebase Auth:", fbError.message);
-        // Continue even if Firebase deletion fails, log the error.
       }
     }
 
-    // 3. Delete from MongoDB
+    // ── DELETE FROM MONGODB ──────────────────────────────────────────────────
     await User.findByIdAndDelete(userId);
     console.log(`✅ MongoDB user ${userId} deleted.`);
 

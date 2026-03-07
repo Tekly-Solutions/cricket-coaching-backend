@@ -5,11 +5,29 @@ import Notification from '../models/Notification.js';
 import Earning from '../models/Earning.js';
 import PromoCode from '../models/PromoCode.js';
 
-// Mock promo codes (in production, these would come from a database)
-const PROMO_CODES = {
-    SUMMER10: { discount: 10.00, type: 'fixed' },
-    CRICKET50: { discount: 30.00, type: 'fixed' }, // 50% of $60
-};
+// Helper: resolve a promo code from the database and return the discount amount
+async function resolvePromoDiscount(promoCode, baseAmount) {
+    if (!promoCode) return 0;
+    try {
+        const promo = await PromoCode.findOne({
+            code: promoCode.toUpperCase(),
+            status: 'active',
+            endDate: { $gte: new Date() },
+        });
+        if (!promo) return 0;
+        if (promo.minimumPrice && baseAmount < promo.minimumPrice) return 0;
+        let discount = 0;
+        if (promo.discountType === 'percentage') {
+            discount = baseAmount * (promo.discountValue / 100);
+        } else {
+            discount = promo.discountValue;
+        }
+        return Math.min(discount, baseAmount);
+    } catch (e) {
+        console.error('Promo code resolution error:', e);
+        return 0;
+    }
+}
 
 /**
  * Create a new booking
@@ -64,12 +82,9 @@ export const createBooking = async (req, res) => {
         const tax = 0.00;
         let discountTotal = 0.00;
 
-        // Apply promo code if provided (simplified for MVP)
+        // Apply promo code if provided
         if (promoCode) {
-            const promo = PROMO_CODES[promoCode.toUpperCase()];
-            if (promo) {
-                discountTotal = promo.discount;
-            }
+            discountTotal = await resolvePromoDiscount(promoCode, sessionFee);
         }
 
         const createdBookings = [];
@@ -744,7 +759,7 @@ export const createPrivateBooking = async (req, res) => {
         const { coachId, startTime, durationMinutes = 60, paymentMethod, promoCode, playerIds } = req.body;
         const user = req.user;
 
-        console.log(`[CreatePrivateBooking] Request from user: ${user._id} (${user.role})`);
+        console.log(`[CreatePrivateBooking] Request from user: ${user.userId} (${user.role})`);
         console.log(`[CreatePrivateBooking] Received coachId: ${coachId}`);
         console.log(`[CreatePrivateBooking] PlayerIds: ${playerIds}`);
 
@@ -756,8 +771,13 @@ export const createPrivateBooking = async (req, res) => {
             }
             playersToBook = playerIds;
         } else {
-            // Player booking for themselves
-            playersToBook = [user._id];
+            // Player booking for themselves — must use PlayerProfile ID not User ID
+            const PlayerProfileModel = mongoose.model('PlayerProfile');
+            const playerProfile = await PlayerProfileModel.findOne({ userId: user.userId || user.id });
+            if (!playerProfile) {
+                return res.status(400).json({ message: 'Player profile not found. Please complete your profile.' });
+            }
+            playersToBook = [playerProfile._id];
         }
 
         // 1. Validate Input
@@ -818,7 +838,7 @@ export const createPrivateBooking = async (req, res) => {
             description: `Private session with ${playersToBook.length > 1 ? 'Multiple Players' : 'Player'}`,
             location: coachProfile.city || 'TBD',
             isRecurring: false,
-            capacity: playersToBook.length,
+            capacity: { max: playersToBook.length },
             pricing: {
                 amount: parseFloat(adjustedFee.toFixed(2)),
                 currency: coachProfile.defaultPricing?.currency || 'USD',
@@ -831,7 +851,7 @@ export const createPrivateBooking = async (req, res) => {
                 bookedCount: playersToBook.length
             }],
             status: 'published',
-            createdBy: user._id,
+            createdBy: user.userId || user.id,
             assignedPlayers: playersToBook.map(pid => ({
                 player: pid,
                 status: 'confirmed',
@@ -848,10 +868,7 @@ export const createPrivateBooking = async (req, res) => {
 
         // Apply promo code if provided
         if (promoCode) {
-            const promo = PROMO_CODES[promoCode.toUpperCase()];
-            if (promo) {
-                discount = promo.discount;
-            }
+            discount = await resolvePromoDiscount(promoCode, adjustedFee);
         }
 
         const totalPerPerson = adjustedFee + serviceFee + tax - discount;
@@ -881,7 +898,7 @@ export const createPrivateBooking = async (req, res) => {
         try {
             await Notification.create({
                 recipient: finalCoachId,
-                sender: user._id,
+                sender: user.userId || user.id,
                 type: 'booking_confirmed',
                 category: 'Schedule',
                 title: 'New Private Session Confirmed',
