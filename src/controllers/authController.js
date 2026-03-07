@@ -532,49 +532,76 @@ export const changePassword = async (req, res) => {
       return res.status(404).json({ message: "User not found" });
     }
 
-    // Check if user has a password (might be OAuth only)
-    if (!user.password) {
+    const isEmailPasswordUser = Array.isArray(user.signInProviders) && user.signInProviders.includes('password');
+    const hasLocalPassword = !!user.password;
+
+    // Block pure social-provider users (Google / Apple only, no password provider)
+    if (!isEmailPasswordUser && !hasLocalPassword) {
       return res.status(400).json({
-        message: "You are logged in via social provider. Please set a password first."
+        message: "You are logged in via a social provider (Google/Apple). Password change is not supported."
       });
     }
 
-    // Verify current password
-    const isMatch = await bcrypt.compare(currentPassword, user.password);
-    if (!isMatch) {
-      return res.status(400).json({ message: "Incorrect current password" });
-    }
-
-    // Hash new password for MongoDB
-    const hashedPassword = await bcrypt.hash(newPassword, 10);
-    user.password = hashedPassword;
-    await user.save();
-
-    console.log('🔐 Password changed successfully in MongoDB for user:', user.email);
-
-    // Sync with Firebase Auth if it's a Firebase User (not local_*)
-    if (user.firebaseUid && !user.firebaseUid.startsWith('local_')) {
-      try {
-        await admin.auth().updateUser(user.firebaseUid, {
-          password: newPassword,
-        });
-        console.log('✅ Password synced with Firebase Auth for UID:', user.firebaseUid);
-      } catch (firebaseError) {
-        console.error('⚠️ Failed to sync password with Firebase:', firebaseError);
-        // Note: We don't rollback MongoDB here because the local login would still work with the new password,
-        // but it leaves a desync state. Ideally, we should rollback or alert.
-        // For now, we'll return a warning or just log it, assuming MongoDB is the primary source of truth for the app logic.
-        // However, since the app uses Firebase Login, this IS critical.
-
-        // Let's attempt to rollback usage of the new password in DB if Firebase fails? 
-        // No, that might be too complex if the error is temporary. 
-        // Let's just warn the user.
-        return res.status(200).json({
-          success: true,
-          message: "Password updated separately. Please use the new password for future logins.",
-          warning: "Could not sync with cloud provider completely."
-        });
+    if (hasLocalPassword) {
+      // local_ users who have their password stored in MongoDB
+      const isMatch = await bcrypt.compare(currentPassword, user.password);
+      if (!isMatch) {
+        return res.status(400).json({ message: "Incorrect current password" });
       }
+
+      // Hash new password for MongoDB
+      const hashedPassword = await bcrypt.hash(newPassword, 10);
+      user.password = hashedPassword;
+      await user.save();
+
+      // Also sync with Firebase if the UID is not a local_ placeholder
+      if (user.firebaseUid && !user.firebaseUid.startsWith('local_')) {
+        try {
+          await admin.auth().updateUser(user.firebaseUid, { password: newPassword });
+          console.log('✅ Password synced with Firebase for UID:', user.firebaseUid);
+        } catch (firebaseError) {
+          console.error('⚠️ Failed to sync password with Firebase:', firebaseError);
+          // MongoDB already updated — return success with a warning
+          return res.status(200).json({
+            success: true,
+            message: "Password updated. Note: cloud sync incomplete — please use new password for future logins."
+          });
+        }
+      }
+    } else {
+      // Firebase email/password user — password lives only in Firebase Auth
+      // Verify current password via Firebase Auth REST API
+      const firebaseWebApiKey = process.env.FIREBASE_WEB_API_KEY;
+      if (!firebaseWebApiKey) {
+        console.error('FIREBASE_WEB_API_KEY is not set in environment');
+        return res.status(500).json({ message: "Server configuration error" });
+      }
+
+      try {
+        const verifyRes = await fetch(
+          `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${firebaseWebApiKey}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              email: user.email,
+              password: currentPassword,
+              returnSecureToken: false,
+            }),
+          }
+        );
+
+        if (!verifyRes.ok) {
+          return res.status(400).json({ message: "Incorrect current password" });
+        }
+      } catch (verifyError) {
+        console.error('Firebase password verification error:', verifyError);
+        return res.status(400).json({ message: "Incorrect current password" });
+      }
+
+      // Current password is correct — update via Firebase Admin SDK
+      await admin.auth().updateUser(user.firebaseUid, { password: newPassword });
+      console.log('✅ Firebase Auth password updated for UID:', user.firebaseUid);
     }
 
     return res.status(200).json({

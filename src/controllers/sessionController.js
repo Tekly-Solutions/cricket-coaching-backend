@@ -1,5 +1,6 @@
 // controllers/sessionController.js
 import Session from '../models/Session.js';
+import GuardianProfile from '../models/GuardianProfile.js';
 import mongoose from 'mongoose';
 
 // Helper function to generate concrete time slots
@@ -351,11 +352,23 @@ export const getCoachSessions = async (req, res) => {
       return { ...session, displaySlot: displaySlot || null, isFinished };
     });
 
-    // For 'upcoming', remove sessions where ALL slots are finished (no future occurrence)
-    const filteredSessions =
-      !isDateRequest && type === 'upcoming'
-        ? enrichedSessions.filter((s) => !s.isFinished)
-        : enrichedSessions;
+    // For date requests: drop any session whose displaySlot doesn't actually
+    // fall on the requested day (handles the ||slots[0] fallback edge-case).
+    // For 'upcoming': remove sessions where ALL slots are finished.
+    let filteredSessions;
+    if (isDateRequest) {
+      const startOfDay = new Date(startDateParam);
+      const endOfDay   = new Date(endDateParam);
+      filteredSessions = enrichedSessions.filter((s) => {
+        if (!s.displaySlot) return false;
+        const d = new Date(s.displaySlot.startTime);
+        return d >= startOfDay && d <= endOfDay;
+      });
+    } else if (type === 'upcoming') {
+      filteredSessions = enrichedSessions.filter((s) => !s.isFinished);
+    } else {
+      filteredSessions = enrichedSessions;
+    }
     // ────────────────────────────────────────────────────────────────────────
 
     return res.status(200).json({
@@ -382,7 +395,14 @@ export const getCoachSessions = async (req, res) => {
 export const getSessionById = async (req, res) => {
   try {
     const session = await Session.findById(req.params.id)
-      .populate('assignedPlayers.player', 'fullName profilePhoto email')
+      .populate({
+        path: 'assignedPlayers.player',
+        select: 'fullName profilePhoto email userId',
+        populate: {
+          path: 'userId',
+          select: 'fullName profilePhoto email',
+        },
+      })
       .populate({
         path: 'coach',
         select: 'role fullName profilePhoto phoneNumber',
@@ -806,6 +826,237 @@ export const updatePlayerReport = async (req, res) => {
 };
 
 // Get all session reports for a specific player (for guardian/player view)
+/**
+ * GET /api/sessions/player
+ * Returns sessions where the authenticated player is assigned, with optional date filtering.
+ */
+export const getPlayerSessions = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+
+    const startDateParam = req.query.startDate;
+    const endDateParam   = req.query.endDate;
+    const isDateRequest  = !!(startDateParam && endDateParam);
+    const limit = parseInt(req.query.limit) || 20;
+    const page  = parseInt(req.query.page)  || 1;
+    const skip  = (page - 1) * limit;
+    const now   = new Date();
+
+    // assignedPlayers.player stores PlayerProfile._id, not User._id
+    // so we must resolve the profile ID first
+    const PlayerProfileModel = mongoose.model('PlayerProfile');
+    const playerProfile = await PlayerProfileModel.findOne({ userId }).select('_id').lean();
+    if (!playerProfile) {
+      return res.status(200).json({
+        status: 'success',
+        results: 0,
+        total: 0,
+        page: 1,
+        pages: 1,
+        sessions: [],
+        data: [],
+      });
+    }
+    const playerProfileId = playerProfile._id;
+
+    const query = {
+      assignedPlayers: {
+        $elemMatch: {
+          player: playerProfileId,
+          status: { $nin: ['cancelled', 'declined'] },
+        },
+      },
+    };
+
+    if (isDateRequest) {
+      const startOfDay = new Date(startDateParam);
+      const endOfDay   = new Date(endDateParam);
+      if (!isNaN(startOfDay.getTime()) && !isNaN(endOfDay.getTime())) {
+        query['timeSlots.startTime'] = { $gte: startOfDay, $lte: endOfDay };
+        query.status = { $ne: 'cancelled' };
+      }
+    } else {
+      // Default: upcoming sessions only
+      query['timeSlots.startTime'] = { $gt: now };
+      query.status = { $nin: ['cancelled', 'completed'] };
+    }
+
+    const sessions = await Session.find(query)
+      .sort({ 'timeSlots.startTime': 1 })
+      .skip(skip)
+      .limit(limit)
+      .populate('coach', 'fullName profilePhoto profileUrl email')
+      .lean();
+
+    const total = await Session.countDocuments(query);
+
+    // Enrich each session: pick displaySlot for the requested date
+    const enrichedSessions = sessions.map((session) => {
+      const slots = session.timeSlots || [];
+      let displaySlot = null;
+
+      if (isDateRequest) {
+        const startOfDay = new Date(startDateParam);
+        const endOfDay   = new Date(endDateParam);
+        displaySlot = slots.find((s) => {
+          const d = new Date(s.startTime);
+          return d >= startOfDay && d <= endOfDay;
+        }) || slots[0];
+      } else {
+        const futureSlots = slots.filter((s) => new Date(s.endTime) > now);
+        displaySlot = futureSlots.length > 0
+          ? futureSlots.reduce((earliest, s) =>
+              new Date(s.startTime) < new Date(earliest.startTime) ? s : earliest
+            )
+          : slots[0];
+      }
+
+      // Strip sensitive player data from assignedPlayers
+      const { assignedPlayers, ...rest } = session;
+      return { ...rest, displaySlot: displaySlot || null };
+    });
+
+    // For date requests: drop sessions whose displaySlot doesn't fall on the
+    // requested day (guards against the ||slots[0] fallback showing wrong dates).
+    const filteredSessions = isDateRequest
+      ? enrichedSessions.filter((s) => {
+          if (!s.displaySlot) return false;
+          const d = new Date(s.displaySlot.startTime);
+          return d >= new Date(startDateParam) && d <= new Date(endDateParam);
+        })
+      : enrichedSessions;
+
+    return res.status(200).json({
+      status: 'success',
+      results: filteredSessions.length,
+      total,
+      page,
+      pages: Math.ceil(total / limit),
+      sessions: filteredSessions,
+      data: filteredSessions,
+    });
+  } catch (error) {
+    console.error('Get player sessions error:', error);
+    return res.status(500).json({
+      status: 'error',
+      message: 'Failed to fetch player sessions',
+    });
+  }
+};
+
+export const getGuardianSessions = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const startDateParam = req.query.startDate;
+    const endDateParam   = req.query.endDate;
+    const isDateRequest  = !!(startDateParam && endDateParam);
+    const limit = parseInt(req.query.limit) || 20;
+    const page  = parseInt(req.query.page)  || 1;
+    const skip  = (page - 1) * limit;
+    const now   = new Date();
+
+    const guardianProfile = await GuardianProfile.findOne({ userId })
+      .select('players')
+      .lean();
+
+    if (!guardianProfile || !guardianProfile.players?.length) {
+      return res.status(200).json({
+        status: 'success',
+        results: 0,
+        total: 0,
+        page: 1,
+        pages: 1,
+        sessions: [],
+        data: [],
+      });
+    }
+
+    const managedPlayerIds = guardianProfile.players;
+
+    const query = {
+      assignedPlayers: {
+        $elemMatch: {
+          player: { $in: managedPlayerIds },
+          status: { $nin: ['cancelled', 'declined'] },
+        },
+      },
+    };
+
+    if (isDateRequest) {
+      const startOfDay = new Date(startDateParam);
+      const endOfDay   = new Date(endDateParam);
+      if (!isNaN(startOfDay.getTime()) && !isNaN(endOfDay.getTime())) {
+        query['timeSlots.startTime'] = { $gte: startOfDay, $lte: endOfDay };
+        query.status = { $ne: 'cancelled' };
+      }
+    } else {
+      query['timeSlots.startTime'] = { $gt: now };
+      query.status = { $nin: ['cancelled', 'completed'] };
+    }
+
+    const sessions = await Session.find(query)
+      .sort({ 'timeSlots.startTime': 1 })
+      .skip(skip)
+      .limit(limit)
+      .populate('coach', 'fullName profilePhoto profileUrl email')
+      .populate({
+        path: 'assignedPlayers.player',
+        select: 'fullName userId',
+        populate: { path: 'userId', select: 'fullName' },
+      })
+      .lean();
+
+    const total = await Session.countDocuments(query);
+
+    const enrichedSessions = sessions.map((session) => {
+      const slots = session.timeSlots || [];
+      let displaySlot = null;
+
+      if (isDateRequest) {
+        const startOfDay = new Date(startDateParam);
+        const endOfDay   = new Date(endDateParam);
+        displaySlot = slots.find((s) => {
+          const d = new Date(s.startTime);
+          return d >= startOfDay && d <= endOfDay;
+        }) || slots[0];
+      } else {
+        const futureSlots = slots.filter((s) => new Date(s.endTime) > now);
+        displaySlot = futureSlots.length > 0
+          ? futureSlots.reduce((earliest, s) =>
+              new Date(s.startTime) < new Date(earliest.startTime) ? s : earliest
+            )
+          : slots[0];
+      }
+
+      return { ...session, displaySlot: displaySlot || null };
+    });
+
+    const filteredSessions = isDateRequest
+      ? enrichedSessions.filter((s) => {
+          if (!s.displaySlot) return false;
+          const d = new Date(s.displaySlot.startTime);
+          return d >= new Date(startDateParam) && d <= new Date(endDateParam);
+        })
+      : enrichedSessions;
+
+    return res.status(200).json({
+      status: 'success',
+      results: filteredSessions.length,
+      total,
+      page,
+      pages: Math.ceil(total / limit),
+      sessions: filteredSessions,
+      data: filteredSessions,
+    });
+  } catch (error) {
+    console.error('Get guardian sessions error:', error);
+    return res.status(500).json({
+      status: 'error',
+      message: 'Failed to fetch guardian sessions',
+    });
+  }
+};
+
 export const getPlayerReports = async (req, res) => {
   try {
     const { playerId } = req.params;
