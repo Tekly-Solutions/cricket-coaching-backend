@@ -1,3 +1,4 @@
+
 import User from "../models/User.js";
 import admin from "../config/firebase.js";
 import { signAccessToken, signRefreshToken, verifyRefreshToken } from "../utils/jwt.js";
@@ -48,6 +49,14 @@ export const signup = async (req, res) => {
         isNewUser: false,
         user: existingUser,
       });
+    }
+
+    // Check if email already exists with a different Firebase UID
+    const existingEmailUser = await User.findOne({ email });
+    if (existingEmailUser) {
+        return res.status(409).json({
+          message: "An account already exists with this email. Please login using your existing method."
+        });
     }
 
     console.log('🆕 Creating new user in MongoDB...');
@@ -229,6 +238,15 @@ export const continueWithProvider = async (req, res) => {
 
     // NEW USER (FIRST TIME)
     if (isNewUser) {
+      // Check if email already exists on a different account
+      const existingEmailUser = await User.findOne({ email });
+      if (existingEmailUser) {
+        const providerName = provider === 'google.com' ? 'Google' : (provider === 'apple.com' ? 'Apple' : 'your social account');
+        return res.status(409).json({
+          message: `An account already exists with this email. Please login using your email and password and link ${providerName} from your profile settings.`
+        });
+      }
+
       // Use Firebase displayName if fullName not provided in body
       const fullName = req.body.fullName || name || "Unnamed User";
       let role = req.body.role; // still required from frontend

@@ -23,6 +23,17 @@ import {
   validatePromoCode 
 } from "../controllers/admin/promoCodeController.js";
 import { getDashboardOverview } from "../controllers/admin/dashboardController.js";
+import { 
+  addSportCommission, 
+  addUserOverride, 
+  calculateCommission, 
+  deleteSportCommission, 
+  deleteUserOverride, 
+  getCommissionSettings, 
+  updateGlobalRate, 
+  updateSportCommission, 
+  updateUserOverride 
+} from "../controllers/admin/commissionController.js";
 
 // Example protected route (add more later: users, sessions, reports, etc.)
 // import { getAdminDashboard } from "../controllers/admin/dashboardController.js"; // create later
@@ -88,6 +99,16 @@ router.post("/promo-codes/validate", adminAuth, validatePromoCode);    // Valida
 // Dashboard overview
 router.get("/dashboard/overview", adminAuth, getDashboardOverview); // Admin dashboard overview stats
 
+// Commission Settings
+router.get("/commission/settings", adminAuth, getCommissionSettings);           // Get current commission settings
+router.put("/commission/global-rate", adminAuth, updateGlobalRate);             // Update global commission rate
+router.post("/commission/sport-rates", adminAuth, addSportCommission);          // Add sport-specific rate
+router.put("/commission/sport-rates/:sportId", adminAuth, updateSportCommission); // Update sport-specific rate
+router.delete("/commission/sport-rates/:sportId", adminAuth, deleteSportCommission); // Delete sport-specific rate
+router.post("/commission/user-overrides", adminAuth, addUserOverride);          // Add user-specific override
+router.put("/commission/user-overrides/:overrideId", adminAuth, updateUserOverride); // Update user-specific override
+router.delete("/commission/user-overrides/:overrideId", adminAuth, deleteUserOverride); // Delete user-specific override
+router.get("/commission/calculate", adminAuth, calculateCommission);            // Calculate commission for a booking
 
 
 export default router;

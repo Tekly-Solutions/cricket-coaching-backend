@@ -1,5 +1,5 @@
-// import dotenv from "dotenv";
-// dotenv.config();
+import dotenv from "dotenv";
+dotenv.config();
 
 import express from "express";
 import cors from "cors";
@@ -20,6 +20,7 @@ import cookieParser from "cookie-parser";
 import paymentRoutes from "./routes/paymentRoutes.js";
 import reviewRoutes from "./routes/reviewRoutes.js";
 import subscriptionRoutes from "./routes/subscriptionRoutes.js";
+import commissionRoutes from "./routes/commissionRoutes.js";
 
 
 const app = express();
@@ -31,7 +32,6 @@ app.use(cookieParser()); // IMPORTANT for req.cookies
 const allowedOrigins = [
   'http://localhost:5173',           // Vite dev server
   'http://localhost:3000',           // Alternative dev port
-  'https://burl-ad60f.web.app'
   // Mobile apps don't send Origin header, so we handle them separately
 ];
 
@@ -44,12 +44,12 @@ app.use(
       if (!origin) {
         return callback(null, true);
       }
-      
+
       // Check if the origin is in our allowed list
       if (allowedOrigins.includes(origin)) {
         return callback(null, true);
       }
-      
+
       // Reject other origins
       callback(new Error('Not allowed by CORS'));
     },
@@ -69,23 +69,24 @@ app.get("/", (req, res) => {
   res.send(`Server is running on http://localhost:${PORT}`);
 });
 
-app.use("/auth", authRoutes);
-app.use("/users", userRoutes);
-app.use("/coach", coachRoutes);
-app.use("/player", playerRouter);
-app.use("/guardian", guardianRouter);
-app.use("/sessions", sessionRoutes);
-app.use("/dashboard", dashboardRoutes);
-app.use("/bookings", bookingRoutes);
-app.use("/earnings", earningsRoutes);
-app.use("/notifications", notificationRoutes);
-app.use("/search", searchRoutes);
-app.use("/payments", paymentRoutes);
-app.use("/reviews", reviewRoutes);
+app.use("/api/auth", authRoutes);
+app.use("/api/users", userRoutes);
+app.use("/api/coach", coachRoutes);
+app.use("/api/player", playerRouter);
+app.use("/api/guardian", guardianRouter);
+app.use("/api/sessions", sessionRoutes);
+app.use("/api/dashboard", dashboardRoutes);
+app.use("/api/bookings", bookingRoutes);
+app.use("/api/earnings", earningsRoutes);
+app.use("/api/notifications", notificationRoutes);
+app.use("/api/search", searchRoutes);
+app.use("/api/payments", paymentRoutes);
+app.use("/api/reviews", reviewRoutes);
 app.use("/api/subscriptions", subscriptionRoutes);
+app.use("/commission", commissionRoutes);
 
 
 /* Admin routes */
-app.use("/admin", adminRouter);
+app.use("/api/admin", adminRouter);
 
 export default app;

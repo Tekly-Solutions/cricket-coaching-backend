@@ -1,3 +1,4 @@
+
 // controllers/searchController.js
 import CoachProfile from '../models/CoachProfile.js';
 import Session from '../models/Session.js';

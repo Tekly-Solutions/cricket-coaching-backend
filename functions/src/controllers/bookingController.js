@@ -1,9 +1,11 @@
+
 import mongoose from 'mongoose';
 import Booking from '../models/Booking.js';
 import Session from '../models/Session.js';
 import Notification from '../models/Notification.js';
 import Earning from '../models/Earning.js';
 import PromoCode from '../models/PromoCode.js';
+import CommissionSettings from '../models/CommissionSettings.js';
 
 // Helper: resolve a promo code from the database and return the discount amount
 async function resolvePromoDiscount(promoCode, baseAmount) {
@@ -78,7 +80,17 @@ export const createBooking = async (req, res) => {
 
         // Calculate pricing based on Session data instead of hardcoded 60
         const sessionFee = session.pricing?.amount || 60.00;
-        const serviceFee = 2.50;
+        
+        // Get dynamic commission/service fee from settings
+        const commissionSettings = await CommissionSettings.getSettings();
+        const guardianUserId = req.user?.userId || req.user?.id;
+        const commissionCalc = commissionSettings.calculateCommission(
+            sessionFee,
+            guardianUserId,
+            null // sportName - could be added from session if available
+        );
+        const serviceFee = commissionCalc.amount;
+
         const tax = 0.00;
         let discountTotal = 0.00;
 
@@ -862,7 +874,17 @@ export const createPrivateBooking = async (req, res) => {
         await session.save();
 
         // 5. Create Bookings (One per player)
-        const serviceFee = 2.50;
+
+        // Get dynamic commission/service fee from settings
+        const commissionSettings = await CommissionSettings.getSettings();
+        const guardianUserId = req.user?.userId || req.user?.id;
+        const commissionCalc = commissionSettings.calculateCommission(
+            adjustedFee,
+            guardianUserId,
+            null // sportName - could be added from session if available
+        );
+        const serviceFee = commissionCalc.amount;
+        
         const tax = 0.00;
         let discount = 0.00;
 
