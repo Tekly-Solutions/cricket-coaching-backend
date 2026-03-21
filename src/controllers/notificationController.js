@@ -1,4 +1,5 @@
 import Notification from '../models/Notification.js';
+import { sendPushToUser } from '../utils/pushNotification.js';
 
 /**
  * Get notifications for authenticated user
@@ -243,6 +244,14 @@ export const createNotification = async (req, res) => {
       actionButton,
       priority: priority || 'normal',
     });
+
+    if (req.body.sendPush) {
+      sendPushToUser(recipient, {
+        title: title || 'New Notification',
+        body: description || '',
+        data: { route: actionButton?.url || '/notifications' },
+      });
+    }
 
     res.status(201).json({
       success: true,

@@ -1,6 +1,6 @@
 import express from "express";
 import { hybridAuth } from "../middlewares/hybridAuth.js";
-import { getUserProfile, updateUserProfile, deleteAccount } from "../controllers/userController.js";
+import { getUserProfile, updateUserProfile, deleteAccount, updateFcmToken } from "../controllers/userController.js";
 import { getProfile, updateProfile, updateProfileImage } from "../controllers/profileController.js";
 
 const router = express.Router();
@@ -18,5 +18,8 @@ router.delete("/me", hybridAuth, deleteAccount);
 router.get("/profile", hybridAuth, getProfile);
 router.put("/profile", hybridAuth, updateProfile);
 router.put("/profile/image", hybridAuth, updateProfileImage);
+
+// FCM push notification token
+router.put("/fcm-token", hybridAuth, updateFcmToken);
 
 export default router;

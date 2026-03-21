@@ -42,8 +42,12 @@ const userSchema = new mongoose.Schema(
       language: {
         type: String,
         default: "en-US",
-        // you can later restrict with enum if you support few languages
       },
+    },
+    // FCM device tokens for push notifications (one per device, max 5)
+    fcmTokens: {
+      type: [String],
+      default: [],
     },
     // Very useful for knowing when profile was meaningfully updated
     lastProfileUpdate: {

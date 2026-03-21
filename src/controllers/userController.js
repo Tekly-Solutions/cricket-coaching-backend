@@ -100,6 +100,22 @@ export const updateUserProfile = async (req, res) => {
     });
 
     console.log("💾 Saving user. phoneNumber value:", user.phoneNumber);
+
+    /* ======================
+       1.5️⃣ UPDATE PREFERENCES
+    ======================= */
+    if (req.body.preferences) {
+      if (typeof req.body.preferences.pushNotifications === 'boolean') {
+        user.preferences.pushNotifications = req.body.preferences.pushNotifications;
+      }
+      if (typeof req.body.preferences.darkMode === 'boolean') {
+        user.preferences.darkMode = req.body.preferences.darkMode;
+      }
+      if (req.body.preferences.language) {
+        user.preferences.language = req.body.preferences.language;
+      }
+    }
+
     await user.save();
     console.log("✅ User saved successfully. Final phoneNumber:", user.phoneNumber);
 
@@ -359,3 +375,37 @@ export const deleteAccount = async (req, res) => {
   }
 };
 
+/**
+ * Register / refresh an FCM device token for push notifications.
+ * PUT /api/users/fcm-token
+ * Body: { token: string }
+ */
+export const updateFcmToken = async (req, res) => {
+  try {
+    const userId = req.user?.id || req.user?.userId;
+    const { token } = req.body;
+
+    if (!token) {
+      return res.status(400).json({ success: false, message: 'FCM token is required' });
+    }
+
+    const user = await User.findById(userId).select('fcmTokens');
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    const tokens = user.fcmTokens || [];
+    if (!tokens.includes(token)) {
+      tokens.push(token);
+      if (tokens.length > 5) tokens.shift(); // drop oldest
+      user.fcmTokens = tokens;
+      await user.save();
+    }
+
+    console.log(`✅ FCM token saved for user ${userId} (${tokens.length} token(s))`);
+    return res.status(200).json({ success: true, message: 'FCM token registered' });
+  } catch (error) {
+    console.error('updateFcmToken error:', error);
+    return res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+};
