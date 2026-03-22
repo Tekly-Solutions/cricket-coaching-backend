@@ -1,4 +1,3 @@
-
 import mongoose from 'mongoose';
 import Booking from '../models/Booking.js';
 import Session from '../models/Session.js';
@@ -6,6 +5,7 @@ import Notification from '../models/Notification.js';
 import Earning from '../models/Earning.js';
 import PromoCode from '../models/PromoCode.js';
 import CommissionSettings from '../models/CommissionSettings.js';
+import { sendPushToUser } from '../utils/pushNotification.js';
 
 // Helper: resolve a promo code from the database and return the discount amount
 async function resolvePromoDiscount(promoCode, baseAmount) {
@@ -81,13 +81,16 @@ export const createBooking = async (req, res) => {
         // Calculate pricing based on Session data instead of hardcoded 60
         const sessionFee = session.pricing?.amount || 60.00;
         
+        // Resolve sport name for sport-specific commission rates
+        const sportName = session.sport || session.category || session.sportType || null;
+
         // Get dynamic commission/service fee from settings
         const commissionSettings = await CommissionSettings.getSettings();
         const guardianUserId = req.user?.userId || req.user?.id;
         const commissionCalc = commissionSettings.calculateCommission(
             sessionFee,
             guardianUserId,
-            null // sportName - could be added from session if available
+            sportName
         );
         const serviceFee = commissionCalc.amount;
 
@@ -185,10 +188,11 @@ export const createBooking = async (req, res) => {
                     netAmount: coachNetEarning,
                 });
 
-                // Create notification for the coach
+                // Create notification + push for the coach
                 try {
+                    const coachUserId = session.coach._id || session.coach;
                     await Notification.create({
-                        recipient: session.coach._id || session.coach,
+                        recipient: coachUserId,
                         sender: userId,
                         type: 'booking_confirmed',
                         category: 'Schedule',
@@ -199,6 +203,11 @@ export const createBooking = async (req, res) => {
                             entityType: 'booking',
                             entityId: booking._id,
                         },
+                    });
+                    sendPushToUser(coachUserId, {
+                        title: '📅 New Booking',
+                        body: `${booking.player.fullName} booked "${session.title}"`,
+                        data: { route: '/coach/bookings', bookingId: booking._id.toString() },
                     });
                 } catch (notifError) {
                     console.error('Failed to create notification:', notifError);
@@ -496,6 +505,11 @@ export const updateBookingStatus = async (req, res) => {
                         description: `Your session "${booking.session.title}" on ${new Date(booking.occurrenceDate).toLocaleDateString()} has been cancelled/declined by the coach.`,
                         relatedEntity: { entityType: 'booking', entityId: booking._id }
                     });
+                    sendPushToUser(recipientId, {
+                        title: '❌ Session Cancelled',
+                        body: `Your "${booking.session.title}" booking was cancelled by the coach.`,
+                        data: { route: '/bookings', bookingId: booking._id.toString() },
+                    });
                 } catch (e) { console.error('Notification error', e); }
 
             } else if (status === 'confirmed') {
@@ -511,6 +525,11 @@ export const updateBookingStatus = async (req, res) => {
                         title: 'Booking Confirmed',
                         description: `Your booking for "${booking.session.title}" has been confirmed!`,
                         relatedEntity: { entityType: 'booking', entityId: booking._id }
+                    });
+                    sendPushToUser(recipientId, {
+                        title: '✅ Booking Confirmed',
+                        body: `Your booking for "${booking.session.title}" is confirmed!`,
+                        data: { route: '/bookings', bookingId: booking._id.toString() },
                     });
                 } catch (e) { console.error('Notification error', e); }
             }
@@ -648,6 +667,11 @@ export const cancelBooking = async (req, res) => {
                 title: 'Booking Cancelled',
                 description: `Booking for "${booking.session.title}" on ${sessionTime.toLocaleDateString()} has been cancelled by the user.`,
                 relatedEntity: { entityType: 'booking', entityId: booking._id }
+            });
+            sendPushToUser(booking.session.coach, {
+                title: '🚫 Booking Cancelled',
+                body: `${booking.player?.fullName ?? 'A player'} cancelled their "${booking.session.title}" booking.`,
+                data: { route: '/coach/bookings', bookingId: booking._id.toString() },
             });
         } catch (e) { console.error('Notification error', e); }
 
@@ -876,12 +900,14 @@ export const createPrivateBooking = async (req, res) => {
         // 5. Create Bookings (One per player)
 
         // Get dynamic commission/service fee from settings
+        // Use coach's sport for sport-specific commission rates
+        const sessionSportName = coachProfile.sport || coachProfile.primarySport || coachProfile.sportType || null;
         const commissionSettings = await CommissionSettings.getSettings();
         const guardianUserId = req.user?.userId || req.user?.id;
         const commissionCalc = commissionSettings.calculateCommission(
             adjustedFee,
             guardianUserId,
-            null // sportName - could be added from session if available
+            sessionSportName
         );
         const serviceFee = commissionCalc.amount;
         

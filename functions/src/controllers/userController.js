@@ -1,4 +1,3 @@
-
 import User from "../models/User.js";
 import CoachProfile from "../models/CoachProfile.js";
 import PlayerProfile from "../models/PlayerProfile.js";
@@ -8,6 +7,7 @@ import Session from "../models/Session.js";
 import Booking from "../models/Booking.js";
 import Earning from "../models/Earning.js";
 import Notification from "../models/Notification.js";
+import { sendPushToUser } from '../utils/pushNotification.js';
 
 export const getUserProfile = async (req, res) => {
   try {
@@ -101,6 +101,24 @@ export const updateUserProfile = async (req, res) => {
     });
 
     console.log("💾 Saving user. phoneNumber value:", user.phoneNumber);
+
+    /* ======================
+       1.5️⃣ UPDATE PREFERENCES
+    ======================= */
+    if (req.body.preferences) {
+      if (!user.preferences) user.preferences = {};
+      
+      if (typeof req.body.preferences.pushNotifications === 'boolean') {
+        user.preferences.pushNotifications = req.body.preferences.pushNotifications;
+      }
+      if (typeof req.body.preferences.darkMode === 'boolean') {
+        user.preferences.darkMode = req.body.preferences.darkMode;
+      }
+      if (req.body.preferences.language) {
+        user.preferences.language = req.body.preferences.language;
+      }
+    }
+
     await user.save();
     console.log("✅ User saved successfully. Final phoneNumber:", user.phoneNumber);
 
@@ -357,5 +375,60 @@ export const deleteAccount = async (req, res) => {
       success: false,
       message: "Internal server error while deleting account",
     });
+  }
+};
+
+/**
+ * Register / refresh an FCM device token for push notifications.
+ * PUT /api/users/fcm-token
+ * Body: { token: string }
+ */
+export const updateFcmToken = async (req, res) => {
+  try {
+    const userId = req.user?.id || req.user?.userId;
+    const { token } = req.body;
+
+    if (!token) {
+      return res.status(400).json({ success: false, message: 'FCM token is required' });
+    }
+
+    const user = await User.findById(userId).select('fcmTokens');
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    const isFirstToken = Number(user.fcmTokens?.length || 0) === 0;
+    const tokens = user.fcmTokens || [];
+    if (!tokens.includes(token)) {
+      tokens.push(token);
+      if (tokens.length > 5) tokens.shift(); // drop oldest
+      user.fcmTokens = tokens;
+      await user.save();
+    }
+
+    console.log(`✅ FCM token saved for user ${userId} (${tokens.length} token(s))`);
+    
+    // 🔔 If this is their very first FCM token, check if they missed the welcome push!
+    if (isFirstToken && tokens.length > 0) {
+      const pendingProfileNotif = await Notification.findOne({
+        recipient: userId,
+        type: 'profile_completion',
+        isRead: false
+      });
+
+      if (pendingProfileNotif) {
+        console.log(`📡 Sending delayed profile completion push to new user ${userId}`);
+        sendPushToUser(userId, {
+          title: pendingProfileNotif.title,
+          body: pendingProfileNotif.description,
+          data: { route: pendingProfileNotif.actionButton?.url || '/profile/edit' }
+        });
+      }
+    }
+
+    return res.status(200).json({ success: true, message: 'FCM token registered' });
+  } catch (error) {
+    console.error('updateFcmToken error:', error);
+    return res.status(500).json({ success: false, message: 'Internal server error' });
   }
 };

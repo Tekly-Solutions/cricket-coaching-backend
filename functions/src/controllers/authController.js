@@ -1,4 +1,3 @@
-
 import User from "../models/User.js";
 import admin from "../config/firebase.js";
 import { signAccessToken, signRefreshToken, verifyRefreshToken } from "../utils/jwt.js";
