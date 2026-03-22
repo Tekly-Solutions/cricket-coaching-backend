@@ -99,6 +99,7 @@ export const createAndAddPlayer = async (req, res) => {
     const {
       fullName,
       age,
+      dateOfBirth,
       role = "Batsman",
       battingStyle = "",
       bowlingStyle = "",
@@ -133,6 +134,7 @@ export const createAndAddPlayer = async (req, res) => {
     const newPlayerProfile = await PlayerProfile.create({
       fullName: fullName.trim(),
       age: age.toString(),
+      dateOfBirth: dateOfBirth || null,
       role,
       battingStyle,
       bowlingStyle,
@@ -462,11 +464,12 @@ export const updatePlayer = async (req, res) => {
       });
     }
 
-    const { fullName, age, role, battingStyle, bowlingStyle, medicalIssues, profilePhoto } = req.body;
+    const { fullName, age, dateOfBirth, role, battingStyle, bowlingStyle, medicalIssues, profilePhoto } = req.body;
 
     const updateData = {};
     if (fullName !== undefined) updateData.fullName = fullName;
     if (age !== undefined) updateData.age = age;
+    if (dateOfBirth !== undefined) updateData.dateOfBirth = dateOfBirth;
     if (role !== undefined) updateData.role = role;
     if (battingStyle !== undefined) updateData.battingStyle = battingStyle;
     if (bowlingStyle !== undefined) updateData.bowlingStyle = bowlingStyle;

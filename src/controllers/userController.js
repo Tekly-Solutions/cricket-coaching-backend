@@ -7,6 +7,7 @@ import Session from "../models/Session.js";
 import Booking from "../models/Booking.js";
 import Earning from "../models/Earning.js";
 import Notification from "../models/Notification.js";
+import { sendPushToUser } from '../utils/pushNotification.js';
 
 export const getUserProfile = async (req, res) => {
   try {
@@ -105,6 +106,8 @@ export const updateUserProfile = async (req, res) => {
        1.5️⃣ UPDATE PREFERENCES
     ======================= */
     if (req.body.preferences) {
+      if (!user.preferences) user.preferences = {};
+      
       if (typeof req.body.preferences.pushNotifications === 'boolean') {
         user.preferences.pushNotifications = req.body.preferences.pushNotifications;
       }
@@ -394,6 +397,7 @@ export const updateFcmToken = async (req, res) => {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
 
+    const isFirstToken = Number(user.fcmTokens?.length || 0) === 0;
     const tokens = user.fcmTokens || [];
     if (!tokens.includes(token)) {
       tokens.push(token);
@@ -403,6 +407,25 @@ export const updateFcmToken = async (req, res) => {
     }
 
     console.log(`✅ FCM token saved for user ${userId} (${tokens.length} token(s))`);
+    
+    // 🔔 If this is their very first FCM token, check if they missed the welcome push!
+    if (isFirstToken && tokens.length > 0) {
+      const pendingProfileNotif = await Notification.findOne({
+        recipient: userId,
+        type: 'profile_completion',
+        isRead: false
+      });
+
+      if (pendingProfileNotif) {
+        console.log(`📡 Sending delayed profile completion push to new user ${userId}`);
+        sendPushToUser(userId, {
+          title: pendingProfileNotif.title,
+          body: pendingProfileNotif.description,
+          data: { route: pendingProfileNotif.actionButton?.url || '/profile/edit' }
+        });
+      }
+    }
+
     return res.status(200).json({ success: true, message: 'FCM token registered' });
   } catch (error) {
     console.error('updateFcmToken error:', error);

@@ -55,12 +55,18 @@ const playerProfileSchema = new mongoose.Schema(
       default: "",
     },
 
-    // Stored as string to match your current Dart mock data exactly
-    // Examples: "14", "15", "17", "18", ...
-    age: {
+    // Stored as string, e.g., "YYYY-MM-DD"
+    dateOfBirth: {
       type: String,
       trim: true,
       // required: true,
+    },
+    
+    // Legacy / simple age storage
+    age: {
+      type: String,
+      trim: true,
+      default: "",
     },
 
     // Medical conditions or issues (e.g., "Asthma", "None", etc.)

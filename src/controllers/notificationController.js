@@ -233,8 +233,10 @@ export const createNotification = async (req, res) => {
       priority,
     } = req.body;
 
+    const actualRecipient = recipient || req.user.userId;
+
     const notification = await Notification.createNotification({
-      recipient,
+      recipient: actualRecipient,
       sender,
       type,
       category,
@@ -246,7 +248,7 @@ export const createNotification = async (req, res) => {
     });
 
     if (req.body.sendPush) {
-      sendPushToUser(recipient, {
+      sendPushToUser(actualRecipient, {
         title: title || 'New Notification',
         body: description || '',
         data: { route: actionButton?.url || '/notifications' },

@@ -72,11 +72,12 @@ export const updateProfile = async (req, res) => {
             playingPosition,
             skillLevel,
             address,
-            age,
+            dateOfBirth,
             role,
             battingStyle,
             bowlingStyle,
-            medicalIssues
+            medicalIssues,
+            preferences
         } = req.body;
 
         // Find user
@@ -92,6 +93,19 @@ export const updateProfile = async (req, res) => {
         if (email) user.email = email;
         if (phone) user.phoneNumber = phone; // Map 'phone' to 'phoneNumber'
         if (effectiveProfileImage) user.profileImage = effectiveProfileImage; // save to base user as well
+
+        if (preferences) {
+            if (!user.preferences) user.preferences = {};
+            if (typeof preferences.pushNotifications === 'boolean') {
+                user.preferences.pushNotifications = preferences.pushNotifications;
+            }
+            if (typeof preferences.darkMode === 'boolean') {
+                user.preferences.darkMode = preferences.darkMode;
+            }
+            if (preferences.language) {
+                user.preferences.language = preferences.language;
+            }
+        }
 
         await user.save();
 
@@ -148,13 +162,13 @@ export const updateProfile = async (req, res) => {
                 await coachProfile.save();
             }
         } else if (userRole === 'player' && user.playerProfile) {
-            const playerProfile = await PlayerProfile.findById(user.playerProfile);
+            const playerProfile = await PlayerProfile.findOne({ userId: userId });
             if (playerProfile) {
                 if (effectiveProfileImage) playerProfile.profilePhoto = effectiveProfileImage;
                 if (playingPosition !== undefined) playerProfile.playingPosition = playingPosition;
                 if (skillLevel !== undefined) playerProfile.skillLevel = skillLevel;
                 if (address !== undefined) playerProfile.address = address;
-                if (age !== undefined) playerProfile.age = age;
+                if (dateOfBirth !== undefined) playerProfile.dateOfBirth = dateOfBirth;
                 if (role !== undefined) playerProfile.role = role;
                 if (battingStyle !== undefined) playerProfile.battingStyle = battingStyle;
                 if (bowlingStyle !== undefined) playerProfile.bowlingStyle = bowlingStyle;
