@@ -1,19 +1,23 @@
 import admin from 'firebase-admin';
-import { readFileSync } from 'fs';
+import { readFileSync, existsSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const serviceAccount = JSON.parse(
-  readFileSync(join(__dirname, '../../serviceAccountKey.json'), 'utf8')
-);
+const serviceAccountPath = join(__dirname, '../../serviceAccountKey.json');
 
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount),
-});
-
-console.log('✅ Firebase Admin initialized');
+if (existsSync(serviceAccountPath)) {
+  const serviceAccount = JSON.parse(readFileSync(serviceAccountPath, 'utf8'));
+  admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount),
+  });
+  console.log('✅ Firebase Admin initialized with serviceAccountKey.json');
+} else {
+  // Use Application Default Credentials when deployed to Firebase Functions
+  admin.initializeApp();
+  console.log('✅ Firebase Admin initialized with default credentials');
+}
 
 export default admin;
