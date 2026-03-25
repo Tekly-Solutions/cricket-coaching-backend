@@ -1,4 +1,3 @@
-
 // controllers/guardianController.js
 import mongoose from "mongoose";
 import GuardianProfile from "../models/GuardianProfile.js";

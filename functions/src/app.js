@@ -83,7 +83,7 @@ app.use("/api/search", searchRoutes);
 app.use("/api/payments", paymentRoutes);
 app.use("/api/reviews", reviewRoutes);
 app.use("/api/subscriptions", subscriptionRoutes);
-app.use("/commission", commissionRoutes);
+app.use("/api/commission", commissionRoutes);
 
 
 /* Admin routes */

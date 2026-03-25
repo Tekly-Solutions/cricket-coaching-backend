@@ -1,4 +1,3 @@
-
 import User from "../../models/User.js";
 import CoachProfile from "../../models/CoachProfile.js";
 import mongoose from "mongoose";

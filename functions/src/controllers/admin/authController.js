@@ -1,11 +1,6 @@
 import Admin from "../../models/Admin.js";
 import { signAdminAccessToken } from "../../utils/adminJwt.js";
-import { getCookieOptions } from "../../utils/cookieOptions.js";
-// import {
-//   NODE_ENV,
-// } from "../../config/secrets.js";
-
-// const cookieOptions = getCookieOptions();
+import cookieOptions from "../../utils/cookieOptions.js";
 
 /**
  * POST /api/admin/login
@@ -59,8 +54,6 @@ export const adminLogin = async (req, res) => {
       role: admin.role,
     });
 
-    const cookieOptions = getCookieOptions();
-
     // Set HTTP-only cookie using shared config
     res.cookie("adminToken", accessToken, cookieOptions.adminToken);
 
@@ -89,17 +82,13 @@ export const adminLogin = async (req, res) => {
  */
 export const adminLogout = async (req, res) => {
   try {
-
-    const cookieOptions = getCookieOptions();
-
     // Clear the cookie
-    // res.clearCookie("adminToken", {
-    //   httpOnly: true,
-    //   secure: NODE_ENV.value() === "production",
-    //   sameSite: "strict",
-    //   path: "/",
-    // });
-    res.clearCookie("adminToken", cookieOptions.adminToken);
+    res.clearCookie("adminToken", {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+      path: "/",
+    });
 
     return res.status(200).json({
       success: true,

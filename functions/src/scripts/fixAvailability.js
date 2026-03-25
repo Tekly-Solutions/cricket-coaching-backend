@@ -3,9 +3,6 @@ import mongoose from 'mongoose';
 import CoachProfile from '../models/CoachProfile.js';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import {
-  MONGO_URI,
-} from "../config/secrets.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -15,7 +12,7 @@ dotenv.config({ path: join(__dirname, '../../.env') });
 
 const fixAvailability = async () => {
   try {
-    const mongoUri = MONGO_URI.value();
+    const mongoUri = process.env.MONGODB_URI || process.env.MONGO_URI;
     if (!mongoUri) {
       throw new Error('MONGODB_URI or MONGO_URI not found in environment variables');
     }

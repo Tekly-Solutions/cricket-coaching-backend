@@ -1,25 +1,21 @@
 import jwt from "jsonwebtoken";
-import {
-  JWT_ACCESS_SECRET,
-  JWT_REFRESH_SECRET,
-} from "../config/secrets.js";
 
 export const signAccessToken = (payload) => {
-  return jwt.sign(payload, JWT_ACCESS_SECRET.value(), {
-    expiresIn: '4h',
+  return jwt.sign(payload, process.env.JWT_ACCESS_SECRET, {
+    expiresIn: process.env.JWT_ACCESS_EXPIRES_IN,
   });
 };
 
 export const signRefreshToken = (payload) => {
-  return jwt.sign(payload, JWT_REFRESH_SECRET.value(), {
-    expiresIn: '30d',
+  return jwt.sign(payload, process.env.JWT_REFRESH_SECRET, {
+    expiresIn: process.env.JWT_REFRESH_EXPIRES_IN,
   });
 };
 
 export const verifyAccessToken = (token) => {
-  return jwt.verify(token, JWT_ACCESS_SECRET.value());
+  return jwt.verify(token, process.env.JWT_ACCESS_SECRET);
 };
 
 export const verifyRefreshToken = (token) => {
-  return jwt.verify(token, JWT_REFRESH_SECRET.value());
+  return jwt.verify(token, process.env.JWT_REFRESH_SECRET);
 };

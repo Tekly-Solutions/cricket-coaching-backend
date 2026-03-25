@@ -1,13 +1,11 @@
-export const getCookieOptions = () => {
-  const isProd = process.env.NODE_ENV === "production";
-
-  return {
-    adminToken: {
-      httpOnly: true,
-      secure: isProd,
-      sameSite: isProd ? "none" : "strict",
-      maxAge: 60 * 60 * 1000,
-      path: "/",
-    },
-  };
+const cookieOptions = {
+  adminToken: {
+    httpOnly: true,                      // Prevents JS access (XSS protection)
+    secure: process.env.NODE_ENV === "production", // HTTPS only in prod
+    sameSite: "strict",                  // CSRF protection
+    maxAge: 60 * 60 * 1000,              // 1 hour (match token expiry)
+    path: "/",                           // Available site-wide
+  },
 };
+
+export default cookieOptions;

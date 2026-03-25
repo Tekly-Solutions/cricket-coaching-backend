@@ -1,15 +1,12 @@
 import Stripe from 'stripe';
 import dotenv from 'dotenv';
-import {
-  STRIPE_SECRET_KEY,
-} from "../config/secrets.js";
 
 dotenv.config();
 
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+
 export const createPaymentIntent = async (req, res) => {
     try {
-        const stripe = new Stripe(STRIPE_SECRET_KEY.value());
-        
         const { amount, currency } = req.body;
 
         // amount is in cents! (e.g. $10.00 = 1000)

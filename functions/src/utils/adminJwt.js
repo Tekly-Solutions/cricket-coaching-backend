@@ -1,14 +1,17 @@
 import jwt from "jsonwebtoken";
-import {
-  ADMIN_JWT_SECRET,
-} from "../config/secrets.js";
+
+// const ADMIN_ACCESS_SECRET = process.env.ADMIN_JWT_SECRET;
+// const ADMIN_ACCESS_EXPIRY = process.env.ADMIN_JWT_EXPIRY; // short-lived
+
+// console.log("ADMIN_JWT_SECRET:", process.env.ADMIN_JWT_SECRET || "undefined");
+
 
 export const signAdminAccessToken = (payload) => {
-  return jwt.sign(payload, ADMIN_JWT_SECRET.value(), {
-    expiresIn: "4h",
+  return jwt.sign(payload, process.env.ADMIN_JWT_SECRET, {
+    expiresIn: process.env.ADMIN_JWT_EXPIRY || "4h",
   });
 };
 
 export const verifyAdminAccessToken = (token) => {
-  return jwt.verify(token, ADMIN_JWT_SECRET.value());
+  return jwt.verify(token, process.env.ADMIN_JWT_SECRET);
 };
