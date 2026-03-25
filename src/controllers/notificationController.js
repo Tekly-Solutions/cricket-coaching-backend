@@ -235,6 +235,23 @@ export const createNotification = async (req, res) => {
 
     const actualRecipient = recipient || req.user.userId;
 
+    // Prevent duplicate unread profile_completion notifications
+    if (type === 'profile_completion') {
+      const existing = await Notification.findOne({
+        recipient: actualRecipient,
+        type: 'profile_completion',
+        isRead: false
+      });
+      
+      if (existing) {
+        return res.status(200).json({
+          success: true,
+          message: 'Profile completion notification already exists (unread)',
+          data: existing,
+        });
+      }
+    }
+
     const notification = await Notification.createNotification({
       recipient: actualRecipient,
       sender,
