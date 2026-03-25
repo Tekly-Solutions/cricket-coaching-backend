@@ -180,6 +180,7 @@ export const updateUserProfile = async (req, res) => {
       const playerFields = [
         "profilePhoto",
         "age",
+        "dateOfBirth",
         "skillLevel",
         "preferredPosition",
         "battingStyle",
