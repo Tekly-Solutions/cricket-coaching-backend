@@ -6,7 +6,7 @@ import User from '../models/User.js';
 import dotenv from 'dotenv';
 
 dotenv.config();
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || 'sk_test_dummy');
 
 /**
  * GET /api/subscriptions/plans

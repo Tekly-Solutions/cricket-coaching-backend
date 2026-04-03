@@ -10,7 +10,7 @@ import { sendPushToUser } from '../utils/pushNotification.js';
 import dotenv from 'dotenv';
 
 dotenv.config();
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || 'sk_test_dummy');
 
 // Helper: resolve a promo code from the database and return the discount amount
 async function resolvePromoDiscount(promoCode, baseAmount) {
