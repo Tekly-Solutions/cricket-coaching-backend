@@ -15,7 +15,7 @@ if (existsSync(serviceAccountPath)) {
   });
   console.log('✅ Firebase Admin initialized with serviceAccountKey.json');
 } else {
-  // Use Application Default Credentials when deployed to Firebase Functions
+  // Use Application Default Credentials when deployed
   admin.initializeApp();
   console.log('✅ Firebase Admin initialized with default credentials');
 }

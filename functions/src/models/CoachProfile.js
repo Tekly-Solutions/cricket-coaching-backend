@@ -259,6 +259,25 @@ const coachProfileSchema = new mongoose.Schema(
         default: [],
       },
     },
+    // Stripe Connect Express — for receiving session payment payouts
+    stripeAccountId: {
+      type: String,
+      default: null,
+    },
+    stripeOnboardingComplete: {
+      type: Boolean,
+      default: false,
+    },
+    // Stripe Billing — subscription tracking
+    stripeSubscriptionId: {
+      type: String,
+      default: null,
+    },
+    stripeSubscriptionStatus: {
+      type: String,
+      enum: ['active', 'trialing', 'past_due', 'cancelled', 'incomplete', null],
+      default: null,
+    },
   },
   { timestamps: true }
 );
