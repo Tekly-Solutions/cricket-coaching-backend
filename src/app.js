@@ -21,6 +21,7 @@ import paymentRoutes from "./routes/paymentRoutes.js";
 import reviewRoutes from "./routes/reviewRoutes.js";
 import subscriptionRoutes from "./routes/subscriptionRoutes.js";
 import commissionRoutes from "./routes/commissionRoutes.js";
+import { handleWebhook } from "./controllers/paymentController.js";
 
 
 const app = express();
@@ -62,6 +63,9 @@ app.use(
 const PORT = process.env.PORT || 4000;
 
 app.use(morgan("dev"));
+
+// ── Webhook (raw body — MUST be before any JSON body-parser routes) ──────────
+app.post("/api/payments/webhook", express.raw({ type: 'application/json' }), handleWebhook);
 
 app.use(express.json());
 

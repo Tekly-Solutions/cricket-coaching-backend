@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import Stripe from 'stripe';
 import Booking from '../models/Booking.js';
 import Session from '../models/Session.js';
 import Notification from '../models/Notification.js';
@@ -6,6 +7,10 @@ import Earning from '../models/Earning.js';
 import PromoCode from '../models/PromoCode.js';
 import CommissionSettings from '../models/CommissionSettings.js';
 import { sendPushToUser } from '../utils/pushNotification.js';
+import dotenv from 'dotenv';
+
+dotenv.config();
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
 // Helper: resolve a promo code from the database and return the discount amount
 async function resolvePromoDiscount(promoCode, baseAmount) {
@@ -37,7 +42,7 @@ async function resolvePromoDiscount(promoCode, baseAmount) {
  */
 export const createBooking = async (req, res) => {
     try {
-        const { sessionId, occurrenceDate, occurrenceDates, paymentMethod, promoCode, playerId: requestedPlayerId } = req.body;
+        const { sessionId, occurrenceDate, occurrenceDates, paymentMethod, paymentIntentId, promoCode, playerId: requestedPlayerId } = req.body;
         const userId = req.user.userId;
 
         // Resolve Player ID (It should be a PlayerProfile ID now)
@@ -61,8 +66,21 @@ export const createBooking = async (req, res) => {
             ? occurrenceDates
             : [occurrenceDate];
 
-        if (paymentMethod === 'test') {
+        if (paymentMethod === 'test' && !paymentIntentId) {
             console.log(`[TEST BOOKING] PlayerProfile ${playerProfileId} booking session ${sessionId} for ${datesToBook.length} dates`);
+        }
+
+        // Verify Stripe PaymentIntent if provided
+        if (paymentIntentId && process.env.STRIPE_SECRET_KEY) {
+            try {
+                const pi = await stripe.paymentIntents.retrieve(paymentIntentId);
+                if (pi.status !== 'succeeded') {
+                    return res.status(402).json({ message: `Payment not completed. Status: ${pi.status}` });
+                }
+            } catch (stripeErr) {
+                console.error('Stripe PaymentIntent verify error:', stripeErr.message);
+                return res.status(402).json({ message: 'Could not verify payment. Please try again.' });
+            }
         }
 
         // Validate required fields
@@ -139,7 +157,8 @@ export const createBooking = async (req, res) => {
                     player: playerProfileId,
                     session: sessionId,
                     occurrenceDate: requestedDate,
-                    paymentMethod,
+                    paymentMethod: paymentIntentId ? 'stripe' : paymentMethod,
+                    paymentIntentId: paymentIntentId || null,
                     pricing: {
                         sessionFee,
                         serviceFee,
@@ -637,6 +656,21 @@ export const cancelBooking = async (req, res) => {
         booking.cancelReason = reason || 'Cancelled by user';
         await booking.save();
 
+        // Issue Stripe refund if payment was made via Stripe
+        let refundId = null;
+        if (booking.paymentIntentId && refundDue && process.env.STRIPE_SECRET_KEY) {
+            try {
+                const refund = await stripe.refunds.create({
+                    payment_intent: booking.paymentIntentId,
+                });
+                refundId = refund.id;
+                console.log(`[Refund] Issued refund ${refundId} for booking ${booking._id}`);
+            } catch (refundErr) {
+                console.error('Stripe refund error:', refundErr.message);
+                // Don't block the cancel — log and continue
+            }
+        }
+
         // Update Earning Status
         await Earning.findOneAndUpdate(
             { booking: booking._id },
@@ -679,6 +713,7 @@ export const cancelBooking = async (req, res) => {
             message: 'Booking cancelled successfully',
             refundDue,
             refundAmount,
+            refundId,
             booking,
         });
     } catch (error) {

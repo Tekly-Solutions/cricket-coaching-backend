@@ -23,8 +23,13 @@ const bookingSchema = new mongoose.Schema(
         },
         paymentMethod: {
             type: String,
-            enum: ['card', 'apple_pay', 'google_pay', 'test'],
+            enum: ['card', 'apple_pay', 'google_pay', 'stripe', 'test'],
             required: true,
+        },
+        // Stripe PaymentIntent ID — used for refunds and audit trail
+        paymentIntentId: {
+            type: String,
+            default: null,
         },
         pricing: {
             sessionFee: {

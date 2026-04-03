@@ -49,6 +49,11 @@ const userSchema = new mongoose.Schema(
       type: [String],
       default: [],
     },
+    // Stripe Customer ID for saved cards (created on first payment)
+    stripeCustomerId: {
+      type: String,
+      default: null,
+    },
     // Very useful for knowing when profile was meaningfully updated
     lastProfileUpdate: {
       type: Date,
