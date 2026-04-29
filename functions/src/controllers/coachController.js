@@ -221,6 +221,30 @@ export const updateCoachAvailability = async (req, res) => {
     }
 
     if (blockedDates !== undefined) {
+      // Validate all blocked dates against existing sessions
+      for (const bd of blockedDates) {
+        if (!bd.startDate || !bd.endDate) continue;
+        const start = new Date(bd.startDate);
+        const end = new Date(bd.endDate);
+
+        const overlappingSessions = await Session.find({
+          coach: userId,
+          status: { $nin: ['cancelled', 'completed'] },
+          'timeSlots': {
+            $elemMatch: {
+              startTime: { $lt: end },
+              endTime: { $gt: start }
+            }
+          }
+        });
+
+        if (overlappingSessions.length > 0) {
+          return res.status(400).json({
+            success: false,
+            message: `You already have a scheduled session during the blocked period from ${start.toLocaleDateString()} to ${end.toLocaleDateString()}. Please cancel or reschedule it first.`,
+          });
+        }
+      }
       profile.availability.blockedDates = blockedDates;
     }
 
@@ -258,12 +282,46 @@ export const addBlockedDate = async (req, res) => {
       });
     }
 
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+
+    // Prevent blocking a date if there are existing sessions on that date
+    const overlappingSessions = await Session.find({
+      coach: userId,
+      status: { $nin: ['cancelled', 'completed'] },
+      'timeSlots': {
+        $elemMatch: {
+          startTime: { $lt: end },
+          endTime: { $gt: start }
+        }
+      }
+    });
+
+    if (overlappingSessions.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: "You already have a scheduled session on this date. Please cancel or reschedule it before blocking this date.",
+      });
+    }
+
     const profile = await CoachProfile.findOne({ userId });
     if (!profile) {
       return res.status(404).json({
         success: false,
         message: "Coach profile not found",
       });
+    }
+
+    // Initialize availability if undefined
+    if (!profile.availability) {
+      profile.availability = {
+        recurringSchedule: { daySchedules: {} },
+        dateOverrides: [],
+        blockedDates: [],
+      };
+    }
+    if (!profile.availability.blockedDates) {
+      profile.availability.blockedDates = [];
     }
 
     const newBlockedDate = {
@@ -278,10 +336,13 @@ export const addBlockedDate = async (req, res) => {
     profile.availability.blockedDates.push(newBlockedDate);
     await profile.save();
 
+    // Get the newly added date with its mongoose-generated _id
+    const addedDate = profile.availability.blockedDates[profile.availability.blockedDates.length - 1];
+
     return res.status(201).json({
       success: true,
       message: "Blocked date added successfully",
-      data: newBlockedDate,
+      data: addedDate,
     });
   } catch (error) {
     console.error('Add blocked date error:', error);
@@ -310,10 +371,18 @@ export const removeBlockedDate = async (req, res) => {
       });
     }
 
+    if (!profile.availability || !profile.availability.blockedDates) {
+      return res.status(200).json({
+        success: true,
+        message: "Blocked date removed successfully",
+      });
+    }
+
     profile.availability.blockedDates = profile.availability.blockedDates.filter(
-      (bd) => bd._id.toString() !== id
+      (bd) => bd._id && bd._id.toString() !== id
     );
 
+    profile.markModified('availability');
     await profile.save();
 
     return res.status(200).json({

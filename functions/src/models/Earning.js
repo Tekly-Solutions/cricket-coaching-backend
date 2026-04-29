@@ -43,7 +43,6 @@ const earningSchema = new mongoose.Schema(
     currency: {
       type: String,
       default: 'USD',
-      enum: ['USD', 'GBP', 'EUR', 'INR', 'AUD'],
     },
 
     // Session info snapshot (for historical reference)
