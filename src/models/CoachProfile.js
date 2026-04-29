@@ -163,7 +163,7 @@ const coachProfileSchema = new mongoose.Schema(
     // From ProUpgradeScreen / subscription badge
     plan: {
       type: String,
-      enum: ["free", "pro", "elite"],
+      enum: ["free", "pro", "elite", "premium-coach"],
       default: "free",
     },
 

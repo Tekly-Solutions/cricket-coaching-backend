@@ -188,6 +188,23 @@ export const createSession = async (req, res) => {
       }
     }
 
+    // Check if any concrete slot falls within a blocked date
+    const profile = await mongoose.model('CoachProfile').findOne({ userId });
+    if (profile && profile.availability && profile.availability.blockedDates) {
+      for (const slot of concreteSlots) {
+        for (const bd of profile.availability.blockedDates) {
+          if (!bd.startDate || !bd.endDate) continue;
+          if (slot.startTime < bd.endDate && slot.endTime > bd.startDate) {
+            const conflictDate = slot.startTime.toLocaleDateString();
+            return res.status(400).json({
+              status: 'error',
+              message: `Cannot schedule session on ${conflictDate} because you have blocked this date/time.`,
+            });
+          }
+        }
+      }
+    }
+
     const session = await Session.create({
       coach: userId,
       createdBy: userId,

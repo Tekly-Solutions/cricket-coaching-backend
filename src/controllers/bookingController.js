@@ -563,18 +563,18 @@ export const updateBookingStatus = async (req, res) => {
             } else if (status === 'confirmed') {
                 booking.status = 'confirmed';
             }
-
-            // Sync with Session Participants
-            await Session.findOneAndUpdate(
-                {
-                    _id: booking.session._id,
-                    'assignedPlayers.player': booking.player
-                },
-                {
-                    $set: { 'assignedPlayers.$.status': booking.status }
-                }
-            );
         }
+
+        // Sync with Session Participants
+        await Session.findOneAndUpdate(
+            {
+                _id: booking.session._id,
+                'assignedPlayers.player': booking.player
+            },
+            {
+                $set: { 'assignedPlayers.$.status': booking.status }
+            }
+        );
 
         await booking.save();
         res.json({ message: `Booking ${status} successfully`, booking });
